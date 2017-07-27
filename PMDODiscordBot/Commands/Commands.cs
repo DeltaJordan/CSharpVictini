@@ -10,6 +10,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Xml;
@@ -19,15 +20,18 @@ using CSharpDewott.Extensions;
 using CSharpDewott.GameInfo;
 using CSharpDewott.IO;
 using CSharpDewott.Music;
+using CSharpDewott.PokémonInfo.Pokémon;
 using Discord;
 using Discord.Audio;
 using Discord.Commands;
+using Discord.WebSocket;
 using Humanizer;
 using Microsoft.Scripting.Utils;
 using MySql.Data.MySqlClient;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Color = System.Drawing.Color;
+using unirest_net.http;
 
 namespace CSharpDewott.Commands
 {
@@ -1390,12 +1394,33 @@ namespace CSharpDewott.Commands
             }
         }
 
-        [Command("me")]
+        /*[Command("me")]
         [Summary("Better /me command, very similar to the PMDO one.")]
         public async Task Say([Summary("This parameter must be in quotes.")]string text)
         {
             await this.Context.Channel.SendMessageAsync($"{this.Context.User.Username} is {text}");
         }
+
+        [Command("definition")]
+        [Summary("Gets the definition of a word, along with some other info")]
+        public async Task Definition(string word)
+        {
+            File.WriteAllText
+                (
+                Path.Combine(Program.AppPath, "wordapirequests.txt"), 
+                !File.Exists(Path.Combine(Program.AppPath, "wordapirequests.txt")) ? "1" : (int.Parse(File.ReadAllText(Path.Combine(Program.AppPath, "wordapirequests.txt"))) + 1).ToString()
+                );
+
+            if (int.Parse() >= 2000)
+            {
+                
+            }
+
+            HttpResponse<string> response = Unirest.get("https://wordsapiv1.p.mashape.com/words/bump/also")
+                .header("X-Mashape-Key", "UD7da7oyXMmshZUsIccgFUHjW2Acp1LhuwEjsnPiViVKD13g6B")
+                .header("Accept", "application/json")
+                .asJson<string>();
+        }*/
 
         /*[Command("setmature")]
         public async Task Set18()
@@ -1889,17 +1914,133 @@ namespace CSharpDewott.Commands
             }
         }
 
-        [Summary("Retrieves the requested Pokémon's data directly from PMDO's databases")]
-        [Command("pkinfo")]
-        [Alias("poke", "pokeinfo")]
+        
+        [Command("pkinfo"), Summary("Retrieves the requested Pokémon's data from a customly built library"), Alias("poke", "pokeinfo")]
         public async Task PokemonInfo(
-            [Summary("Pokémon's name to search. Must be in quotes")]
+            [Summary("Pokémon's name to search. Must be in quotes if there are spaces.")]
             string pokeName)
         {
             await this.Context.Channel.TriggerTypingAsync();
 
+            string parsedImageUrl = string.Empty;
+
             try
             {
+
+                if (PokéDex.InstanceDex == null)
+                {
+                    new PokéDex();
+                }
+
+                if (PokéDex.InstanceDex == null)
+                {
+                    Console.WriteLine("[.pokeinfo] Instance is still null!");
+                    return;
+                }
+
+                Pokémon requestedPokémon = PokéDex.InstanceDex.AllPokémon.FirstOrDefault(e => string.Equals(e.SpeciesName, pokeName, StringComparison.CurrentCultureIgnoreCase) || int.TryParse(pokeName, out int result) && e.DexNum == result);
+
+                if (requestedPokémon == null)
+                {
+                    await this.ReplyAsync($"Pokémon '{pokeName}' not found! {(pokeName.ToLower() == "nidoran" ? "\nNidoran Requires '-F' or '-M' to indicate gender." : string.Empty)}");
+                    return;
+                }
+
+                EmbedBuilder builder = new EmbedBuilder
+                {
+                    Title = requestedPokémon.SpeciesName,
+                    Footer = new EmbedFooterBuilder { Text = $"#{requestedPokémon.DexNum}" }
+                };
+
+                parsedImageUrl = $"https://play.pokemonshowdown.com/sprites/xyani/{requestedPokémon.SpeciesName}.gif";
+
+                parsedImageUrl = parsedImageUrl.Replace("Mime Jr.", "mimejr").Replace("Mr. Mime", "mrmime").Replace("Type: Null", "typenull").Replace("Nidoran-F", "nidoranf").Replace("Nidoran-M", "nidoranm").ToLower();
+
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(parsedImageUrl);
+                request.Method = WebRequestMethods.Http.Head;
+                HttpWebResponse response = (HttpWebResponse)request.GetResponse();
+                if (response.StatusCode != HttpStatusCode.OK)
+                {
+                    await this.ReplyAsync($"{(await this.Context.Channel.GetUserAsync(228019100008316948)).Mention} Sprite <{parsedImageUrl}> does not exist!");
+                    return;
+                }
+
+                builder.ImageUrl = parsedImageUrl;
+
+                builder.WithColor(requestedPokémon.Color);
+
+                builder.Fields.Add(new EmbedFieldBuilder
+                {
+                    IsInline = true,
+                    Name = "Prevolution",
+                    Value = requestedPokémon.EvolvesFrom == null ? "No prevolution" : string.Join(", ", requestedPokémon.EvolvesFrom)
+                });
+
+                builder.Fields.Add(new EmbedFieldBuilder
+                {
+                    IsInline = true,
+                    Name = "Evolutions",
+                    Value = requestedPokémon.EvolvesInto == null ? "No evolutions" : string.Join(", ", requestedPokémon.EvolvesInto)
+                });
+
+                builder.Fields.Add(new EmbedFieldBuilder
+                {
+                    IsInline = false,
+                    Name = "Types",
+                    Value = requestedPokémon.Types == null ? "Error" : string.Join(", ", requestedPokémon.Types)
+                });
+
+                builder.Fields.Add(new EmbedFieldBuilder
+                {
+                    IsInline = true,
+                    Name = "Size",
+                    Value = requestedPokémon.Height
+                });
+
+                builder.Fields.Add(new EmbedFieldBuilder
+                {
+                    IsInline = true,
+                    Name = "Mass",
+                    Value = requestedPokémon.Weight
+                });
+
+                builder.Fields.Add(new EmbedFieldBuilder
+                {
+                    IsInline = true,
+                    Name = "Egg Groups",
+                    Value = $"{requestedPokémon.EggGroups.EggGroup1}{(requestedPokémon.EggGroups.EggGroup2 == null ? string.Empty : "\n" + requestedPokémon.EggGroups.EggGroup2)}"
+                });
+
+                builder.Fields.Add(new EmbedFieldBuilder
+                {
+                    IsInline = false,
+                    Name = "Base stats",
+                    Value = $"{requestedPokémon.BaseStats.Hp}/{requestedPokémon.BaseStats.Attack}/{requestedPokémon.BaseStats.Defense}/{requestedPokémon.BaseStats.SpecialAttack}/{requestedPokémon.BaseStats.SpecialDefense}/{requestedPokémon.BaseStats.Speed}"
+                });
+
+                builder.Fields.Add(new EmbedFieldBuilder
+                {
+                    IsInline = true,
+                    Name = "Abilities",
+                    Value = $"{requestedPokémon.Abilities.Ability1}{(requestedPokémon.Abilities.Ability2 == requestedPokémon.Abilities.Ability1 || requestedPokémon.Abilities.Ability2 == null ? string.Empty : $"; {requestedPokémon.Abilities.Ability2}")}"
+                });
+
+                if (requestedPokémon.Abilities.AbilityH != null)
+                {
+                    builder.Fields.Add(new EmbedFieldBuilder
+                    {
+                        IsInline = true,
+                        Name = "Hidden Ability",
+                        Value = requestedPokémon.Abilities.AbilityH
+                    });
+                }
+
+                await this.ReplyAsync(string.Empty, false, builder.Build());
+
+                /*SvnClient client = new SvnClient();
+                client.Export(SvnTarget.FromString("https://github.com/Zarel/Pokemon-Showdown/trunk/master/data"), PathsHelper.CreateIfDoesNotExist(Program.AppPath, "Pokemon-Data"));
+
+
 
                 string hostName = "localhost";
 
@@ -2260,15 +2401,24 @@ namespace CSharpDewott.Commands
                 catch (Exception ex)
                 {
                     Console.Out.WriteLine($"Error \n {ex.Message} \n {ex.StackTrace} \n {ex.Source}");
-                }
+                }*/
             }
             catch (Exception ex)
             {
                 Console.Out.WriteLine($"Error \n {ex.Message} \n {ex.StackTrace} \n {ex.Source}");
+
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(parsedImageUrl);
+                request.Method = WebRequestMethods.Http.Head;
+                HttpWebResponse response = (HttpWebResponse)request.GetResponse();
+                if (response.StatusCode != HttpStatusCode.OK)
+                {
+                    await this.ReplyAsync($"Sprite <{parsedImageUrl}> does not exist!");
+                }
             }
 
             await this.StopTyping();
         }
+
 
         /*[Summary("Gets the requested pokemon randomly from google images. Warning: If you didn't know already, Google Images can be very... scary sometimes.")]
         [Command("pokeimage")]

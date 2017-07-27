@@ -169,6 +169,7 @@ namespace CSharpDewott
             Client.Ready += this.Client_Ready;
 
             await this.InstallCommands();
+
             XmlDocument doc = new XmlDocument();
             doc.Load(Path.Combine(AppPath, "config.xml"));
             XmlNodeList xmlNodeList = doc.SelectNodes("/Settings/Token");
