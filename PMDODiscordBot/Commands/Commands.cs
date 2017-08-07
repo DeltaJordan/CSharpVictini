@@ -20,7 +20,10 @@ using CSharpDewott.Extensions;
 using CSharpDewott.GameInfo;
 using CSharpDewott.IO;
 using CSharpDewott.Music;
+using CSharpDewott.PokémonInfo.Items;
 using CSharpDewott.PokémonInfo.Pokémon;
+using CSharpDewott.Preconditions;
+using CSharpDewott.Properties;
 using Discord;
 using Discord.Audio;
 using Discord.Commands;
@@ -30,8 +33,11 @@ using Microsoft.Scripting.Utils;
 using MySql.Data.MySqlClient;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using RestSharp.Extensions;
 using Color = System.Drawing.Color;
 using unirest_net.http;
+using Image = System.Drawing.Image;
+using ImageFormat = System.Drawing.Imaging.ImageFormat;
 
 namespace CSharpDewott.Commands
 {
@@ -39,11 +45,15 @@ namespace CSharpDewott.Commands
     {
         private IAudioClient currentAudioClient;
         private Process ffmpeg;
+        public readonly string AppPath = Program.AppPath;
 
         //Cooldowns
         private int lastUsermarkovCall = 0;
         private int lastSongSwitch;
-        private Stopwatch markovStopwatch = new Stopwatch();
+
+        private static Dictionary<ulong, Stopwatch> markovStopwatches = new Dictionary<ulong, Stopwatch>();
+
+        private static Dictionary<ulong, Stopwatch> e6Stopwatches = new Dictionary<ulong, Stopwatch>();
 
         private Dictionary<int, string> staleList = new Dictionary<int, string>();
 
@@ -51,13 +61,6 @@ namespace CSharpDewott.Commands
         {
             "tank engine",
             "pmu"
-        };
-
-        public static readonly List<ulong> Whitelist = new List<ulong>
-        {
-            228019100008316948,
-            213135389861478400,
-            263205896123842562
         };
 
         private Process CreateStream(string songPath)
@@ -244,14 +247,9 @@ namespace CSharpDewott.Commands
             }
         }
 
-        [Command("stoptyping")]
+        [Command("stoptyping"), AdminPrecondition]
         public async Task StopTyping()
         {
-            if (!Whitelist.Contains(this.Context.User.Id))
-            {
-                return;
-            }
-
             try
             {
                 // Globals.TypingDisposable.ForEach(e => e.Dispose());
@@ -296,14 +294,9 @@ namespace CSharpDewott.Commands
             }
         }
 
-        [Command("rebuildlogs"), Summary("This is a bot owner only command, which means you can't use it ¯\\_(ツ)_/¯")]
+        [Command("rebuildlogs"), AdminPrecondition]
         public async Task RebuildLogs()
         {
-            if (!Whitelist.Contains(this.Context.User.Id))
-            {
-                return;
-            }
-
             try
             {
                 await Program.Instance.Client_Ready();
@@ -315,19 +308,14 @@ namespace CSharpDewott.Commands
         }
 
         [Command("2017"), Summary("2017 memes")]
-        public async Task Task2017(string intput)
+        public async Task Task2017(params string[] input)
         {
-            await this.ReplyAsync($">2017\n>{intput}");
+            await this.ReplyAsync($">2017\n>{string.Join(" ", input)}");
         }
 
-        [Command("add_blacklist"), Summary("This is a bot owner only command, which means you can't use it ¯\\_(ツ)_/¯")]
+        [Command("add_blacklist"), Summary("This is a bot owner only command, which means you can't use it ¯\\_(ツ)_/¯"), AdminPrecondition]
         public async Task BlacklistAdd(string commandName)
         {
-            if (!Whitelist.Contains(this.Context.User.Id))
-            {
-                return;
-            }
-
             try
             {
                 Directory.CreateDirectory(Path.Combine(Program.AppPath, "blacklists"));
@@ -351,14 +339,9 @@ namespace CSharpDewott.Commands
             }
         }
 
-        [Command("add_blacklist_markov"), Summary("This is a bot owner only command, which means you can't use it ¯\\_(ツ)_/¯")]
+        [Command("add_blacklist_markov"), Summary("This is a bot owner only command, which means you can't use it ¯\\_(ツ)_/¯"), AdminPrecondition]
         public async Task BlacklistMarkovAdd()
         {
-            if (!Whitelist.Contains(this.Context.User.Id))
-            {
-                return;
-            }
-
             try
             {
                 Directory.CreateDirectory(Path.Combine(Program.AppPath, "markov-blacklists"));
@@ -382,14 +365,9 @@ namespace CSharpDewott.Commands
             }
         }
 
-        [Command("purge"), Summary("This is a bot owner only command, which means you can't use it ¯\\_(ツ)_/¯")]
+        [Command("purge"), Summary("This is a bot owner only command, which means you can't use it ¯\\_(ツ)_/¯"), AdminPrecondition]
         public async Task Purge(int numberOfMessages)
         {
-            if (!Whitelist.Contains(this.Context.User.Id))
-            {
-                return;
-            }
-
             if (numberOfMessages == -1)
             {
                 List<IReadOnlyCollection<IMessage>> messagesList = await this.Context.Channel.GetMessagesAsync(int.MaxValue).ToList();
@@ -455,7 +433,7 @@ namespace CSharpDewott.Commands
             ProcessStartInfo info = new ProcessStartInfo
             {
                 FileName = "py",
-                Arguments = $"-3 \"{Path.Combine(Program.AppPath, "wc.py")}\"",
+                Arguments = $"-3 \"{Path.Combine(Program.AppPath, "Markovs", "wc.py")}\"",
                 UseShellExecute = false,
                 RedirectStandardOutput = true
             };
@@ -512,6 +490,25 @@ namespace CSharpDewott.Commands
 
             await this.StopTyping();
 
+            Stopwatch e6Stopwatch = null;
+
+            if (!this.Context.Channel.Name.ToLower().Contains("bot"))
+            {
+
+                if (e6Stopwatches.TryGetValue(this.Context.Channel.Id, out e6Stopwatch) && e6Stopwatch.IsRunning && e6Stopwatch.ElapsedMilliseconds < 200000)
+                {
+                    await this.ReplyAsync($"Please wait {200 - e6Stopwatch.Elapsed.Seconds} seconds until using this command.");
+                    return;
+                }
+
+                if (!e6Stopwatches.ContainsKey(this.Context.Channel.Id))
+                {
+                    e6Stopwatches.Add(this.Context.Channel.Id, new Stopwatch());
+
+                    e6Stopwatches.TryGetValue(this.Context.Channel.Id, out e6Stopwatch);
+                }
+            }
+
             bool getNumberOfImages = tags.Any(e => e.ToLower().Contains("<getcount>"));
 
             bool getJsonId = tags.Any(e => e.ToLower().Contains("<getid>"));
@@ -524,7 +521,14 @@ namespace CSharpDewott.Commands
             {
                 if (int.TryParse(forcedTag, out int result))
                 {
-                    requestedNumber = result <= 5 ? result : 5;
+                    if (this.Context.Channel.Name.ToLower().Contains("bot"))
+                    {
+                        requestedNumber = result <= 5 ? result : 5;
+                    }
+                    else
+                    {
+                        await this.ReplyAsync("Keep image spam to bot channels. The image count has been set to 1.");
+                    }
                 }
             }
 
@@ -534,10 +538,14 @@ namespace CSharpDewott.Commands
             {
                 await this.Context.Channel.TriggerTypingAsync();
 
+                List<string> exceededTags = null;
                 if (forcedTags.Count > 6)
                 {
-                    await this.ReplyAsync("Tag limit of 6 exceeded.");
-                    return;
+                    //await this.ReplyAsync("Tag limit of 6 exceeded.");
+                    //return;
+
+                    exceededTags = forcedTags.Skip(6).ToList();
+                    forcedTags = forcedTags.Take(6).ToList();
                 }
 
                 string url = $"https://e621.net/post/index.json?limit=320&tags={string.Join(" ", forcedTags)}";
@@ -582,6 +590,11 @@ namespace CSharpDewott.Commands
                         return extension != "png" && extension != "jpg" && extension != "jpeg" && extension != "gif";
                     }
 
+                    if (exceededTags != null && ((JObject)e).TryGetValue("tags", StringComparison.CurrentCultureIgnoreCase, out JToken resultTagToken))
+                    {
+                        return exceededTags.Any(exceededTag => !resultTagToken.ToObject<string>().Split(' ').Any(f => string.Equals(f, exceededTag, StringComparison.CurrentCultureIgnoreCase)));
+                    }
+
                     return true;
                 });
 
@@ -621,11 +634,11 @@ namespace CSharpDewott.Commands
                     url = selectedImage.GetValue("file_url").ToObject<string>() ?? throw new Exception("Couldn't find an image with those tags.");
 
 
-                    if (selectedImage.GetValue("file_size").ToObject<ulong>() > 8000000)
-                    {
-                        await this.E6FileSizeChecker(images, tags);
-                        return;
-                    }
+                    //                    if (selectedImage.GetValue("file_size").ToObject<ulong>() > 8000000)
+                    //                    {
+                    //                        await this.E6FileSizeChecker(images, tags);
+                    //                        return;
+                    //                    }
 
                     //Do mimetypes
                     switch (ext)
@@ -670,82 +683,116 @@ namespace CSharpDewott.Commands
                         options = JsonConvert.DeserializeObject<UserOptions>(File.ReadAllText(Path.Combine(Program.AppPath, "e6options", $"{this.Context.User.Id}.json")));
                     }
 
-                    using (MemoryStream stream = new MemoryStream(await Program.Instance.HttpClient.GetByteArrayAsync(url)))
+                    //                    using (MemoryStream stream = new MemoryStream(await Program.Instance.HttpClient.GetByteArrayAsync(url)))
+                    //                    {
+                    //                        await this.Context.Channel.SendFileAsync(stream, $"image.{ext}");
+
+                    EmbedBuilder builder = new EmbedBuilder();
+
+                    if (options.DisplaySources)
                     {
-                        await this.Context.Channel.SendFileAsync(stream, $"image.{ext}");
+                        string[] sources;
 
-                        if (options.DisplaySources)
+                        if (selectedImage.TryGetValue("sources", StringComparison.CurrentCultureIgnoreCase, out JToken result))
                         {
-                            string[] sources;
-
-                            if (selectedImage.TryGetValue("sources", StringComparison.CurrentCultureIgnoreCase, out JToken result))
+                            sources = result.ToObject<string[]>();
+                        }
+                        else
+                        {
+                            sources = new[]
                             {
-                                sources = result.ToObject<string[]>();
-                            }
-                            else
-                            {
-                                sources = new[]
-                                {
                                     "No sources have been given for this image."
-                                };
-                            }
-
-                            EmbedBuilder builder = new EmbedBuilder
-                            {
-                                Title = "Sources",
-                                Description = sources.Aggregate((d, g) => $"{d}\n{g}")
                             };
-
-                            await this.ReplyAsync(string.Empty, false, builder.Build());
                         }
 
-                        if (options.DisplayTags)
+                        builder.Fields.Add(new EmbedFieldBuilder
                         {
+                            IsInline = true,
+                            Name = "Sources",
+                            Value = sources.Aggregate((d, g) => $"{d}\n{g}")
+                        });
+                    }
 
-                            string allTags = selectedImage.GetValue("tags").ToObject<string>();
+                    if (options.DisplayTags)
+                    {
 
-                            if (allTags.Length > 2048)
+                        string allTags = selectedImage.GetValue("tags").ToObject<string>();
+
+                        if (allTags.Length > 2048)
+                        {
+                            string truncatedTags = string.Empty;
+
+                            string[] tagsList = allTags.Split(' ');
+
+                            foreach (string s in tagsList)
                             {
-                                string truncatedTags = string.Empty;
-
-                                string[] tagsList = allTags.Split(' ');
-
-                                foreach (string s in tagsList)
+                                if (truncatedTags.Length < 2000)
                                 {
-                                    if (truncatedTags.Length < 2000)
-                                    {
-                                        truncatedTags += s + ", ";
-                                        continue;
-                                    }
-
-                                    truncatedTags += s;
-                                    break;
+                                    truncatedTags += s + ", ";
+                                    continue;
                                 }
 
-                                allTags = truncatedTags;
+                                truncatedTags += s;
+                                break;
                             }
 
-                            EmbedBuilder builder = new EmbedBuilder
-                            {
-                                Title = "Tags",
-                                Description = allTags
-                            };
-
-                            await this.ReplyAsync(string.Empty, false, builder.Build());
+                            allTags = truncatedTags;
                         }
 
-                        if (options.DisplayId)
+                        builder.Fields.Add(new EmbedFieldBuilder
                         {
-                            EmbedBuilder builder = new EmbedBuilder
-                            {
-                                Title = "Id",
-                                Description = selectedImage.GetValue("id").ToObject<string>()
-                            };
+                            IsInline = true,
+                            Name = "Tags",
+                            Value = allTags
+                        });
+                    }
 
-                            await this.ReplyAsync(string.Empty, false, builder.Build());
+                    string artists = selectedImage.TryGetValue("artist", StringComparison.CurrentCultureIgnoreCase, out JToken authorToken) ? string.Join(", ", authorToken.ToObject<string[]>()) : "Unknown";
+
+                    builder.Author = new EmbedAuthorBuilder
+                    {
+                        IconUrl = "http://i.imgur.com/3ngaS8h.png",
+                        Name = $"#{selectedImage.GetValue("id").ToObject<string>()}: {artists}",
+                        Url = $"https://e621.net/post/show/{selectedImage.GetValue("id").ToObject<string>()}"
+                    };
+
+                    builder.ImageUrl = url;
+
+                    builder.Description = $"Score: {selectedImage.GetValue("score").ToObject<string>()}\nFavorites: {selectedImage.GetValue("fav_count").ToObject<string>()}";
+
+                    Color embedColor = Color.Aquamarine;
+
+                    if (selectedImage.TryGetValue("rating", StringComparison.CurrentCultureIgnoreCase, out JToken resultJToken))
+                    {
+                        switch (resultJToken.ToObject<string>())
+                        {
+                            case "s":
+                                {
+                                    embedColor = Color.Green;
+                                }
+                                break;
+                            case "q":
+                                {
+                                    embedColor = Color.Yellow;
+                                }
+                                break;
+                            case "e":
+                                {
+                                    embedColor = Color.Red;
+                                }
+                                break;
+                            default:
+                                break;
                         }
                     }
+
+                    builder.WithColor(embedColor);
+
+                    await this.ReplyAsync(string.Empty, false, builder.Build());
                 }
+
+                e6Stopwatch?.Restart();
+                //}
             }
             catch (Exception e)
             {
@@ -796,18 +843,27 @@ namespace CSharpDewott.Commands
         {
             try
             {
-                if (this.markovStopwatch.Elapsed.Seconds < 100 && this.markovStopwatch.IsRunning)
+                Stopwatch markovstopwatch = null;
+
+                if (this.Context.Channel.Id != 329320797774675971 && markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovstopwatch) && markovstopwatch.IsRunning && markovstopwatch.ElapsedMilliseconds < 60000)
                 {
-                    await this.ReplyAsync($"Please wait {100 - this.markovStopwatch.Elapsed.Seconds} seconds until using this command.");
+                    await this.ReplyAsync($"Please wait {60 - markovstopwatch.Elapsed.Seconds} seconds until using this command.");
                     return;
                 }
 
-                File.WriteAllText(Path.Combine(Program.AppPath, "fileLoc.txt"), "lewdmarkov.txt");
+                if (!markovStopwatches.ContainsKey(this.Context.Channel.Id) && this.Context.Channel.Id != 329320797774675971)
+                {
+                    markovStopwatches.Add(this.Context.Channel.Id, new Stopwatch());
+
+                    markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovstopwatch);
+                }
+
+                File.WriteAllText(Path.Combine(Program.AppPath, "Markovs", "fileLoc.txt"), "lewdmarkov.txt");
 
                 ProcessStartInfo info = new ProcessStartInfo
                 {
                     FileName = "py",
-                    Arguments = $"-3 \"{Path.Combine(Program.AppPath, "markovSentence.py")}\"",
+                    Arguments = $"-3 \"{Path.Combine(Program.AppPath, "Markovs", "markovSentence.py")}\"",
                     UseShellExecute = false,
                     RedirectStandardOutput = true
                 };
@@ -818,35 +874,35 @@ namespace CSharpDewott.Commands
 
                 Console.Out.WriteLine($"[python-output@{DateTime.Now.ToLongTimeString()}]: {output}");
 
-                while (!File.Exists(Path.Combine(Program.AppPath, "output.txt")))
+                while (!File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")))
                 {
                 }
 
-                if (string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "output.txt"))))
+                if (string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt"))))
                 {
                     await this.ReplyAsync("Markov creation failed!");
                 }
                 else
                 {
-                    await this.ReplyAsync(File.ReadAllText(Path.Combine(Program.AppPath, "output.txt")).Replace("@", string.Empty).Replace("\n", string.Empty));
+                    await this.ReplyAsync(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt")).Replace("@", string.Empty).Replace("\n", string.Empty));
 
-                    this.markovStopwatch.Restart();
+                    markovstopwatch?.Restart();
                 }
             }
             catch (Exception e)
             {
                 Console.WriteLine(e);
 
-                if (!File.Exists(Path.Combine(Program.AppPath, "output.txt")) || string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "output.txt"))))
+                if (!File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")) || string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt"))))
                 {
                     await this.ReplyAsync("Markov creation failed!");
                 }
             }
             finally
             {
-                if (File.Exists(Path.Combine(Program.AppPath, "output.txt")))
+                if (File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")))
                 {
-                    File.Delete(Path.Combine(Program.AppPath, "output.txt"));
+                    File.Delete(Path.Combine(Program.AppPath, "Markovs", "output.txt"));
                 }
             }
         }
@@ -856,18 +912,27 @@ namespace CSharpDewott.Commands
         {
             try
             {
-                if (this.markovStopwatch.Elapsed.Seconds < 100 && this.markovStopwatch.IsRunning)
+                Stopwatch markovStopwatch = null;
+
+                if (this.Context.Channel.Id != 329320797774675971 && markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch) && markovStopwatch.IsRunning && markovStopwatch.ElapsedMilliseconds < 60000)
                 {
-                    await this.ReplyAsync($"Please wait {100 - this.markovStopwatch.Elapsed.Seconds} seconds until using this command.");
+                    await this.ReplyAsync($"Please wait {60 - markovStopwatch.Elapsed.Seconds} seconds until using this command.");
                     return;
                 }
-                
-                File.WriteAllText(Path.Combine(Program.AppPath, "fileLoc.txt"), "dontblink.txt");
+
+                if (!markovStopwatches.ContainsKey(this.Context.Channel.Id) && this.Context.Channel.Id != 329320797774675971)
+                {
+                    markovStopwatches.Add(this.Context.Channel.Id, new Stopwatch());
+
+                    markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch);
+                }
+
+                File.WriteAllText(Path.Combine(Program.AppPath, "Markovs", "fileLoc.txt"), "dontblink.txt");
 
                 ProcessStartInfo info = new ProcessStartInfo
                 {
                     FileName = "py",
-                    Arguments = $"-3 \"{Path.Combine(Program.AppPath, "markovNewline.py")}\"",
+                    Arguments = $"-3 \"{Path.Combine(Program.AppPath, "Markovs", "markovNewline.py")}\"",
                     UseShellExecute = false,
                     RedirectStandardOutput = true
                 };
@@ -878,35 +943,35 @@ namespace CSharpDewott.Commands
 
                 Console.Out.WriteLine($"[python-output@{DateTime.Now.ToLongTimeString()}]: {output}");
 
-                while (!File.Exists(Path.Combine(Program.AppPath, "output.txt")))
+                while (!File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")))
                 {
                 }
 
-                if (string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "output.txt"))))
+                if (string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt"))))
                 {
                     await this.ReplyAsync("Markov creation failed!");
                 }
                 else
                 {
-                    await this.ReplyAsync(File.ReadAllText(Path.Combine(Program.AppPath, "output.txt")).Replace("@", string.Empty).Replace("\n", string.Empty));
+                    await this.ReplyAsync(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt")));
 
-                    this.markovStopwatch.Restart();
+                    markovStopwatch?.Restart();
                 }
             }
             catch (Exception e)
             {
                 Console.WriteLine(e);
 
-                if (!File.Exists(Path.Combine(Program.AppPath, "output.txt")) || string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "output.txt"))))
+                if (!File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")) || string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt"))))
                 {
                     await this.ReplyAsync("Markov creation failed!");
                 }
             }
             finally
             {
-                if (File.Exists(Path.Combine(Program.AppPath, "output.txt")))
+                if (File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")))
                 {
-                    File.Delete(Path.Combine(Program.AppPath, "output.txt"));
+                    File.Delete(Path.Combine(Program.AppPath, "Markovs", "output.txt"));
                 }
             }
         }
@@ -916,10 +981,19 @@ namespace CSharpDewott.Commands
         {
             try
             {
-                if (this.markovStopwatch.Elapsed.Seconds < 100 && this.markovStopwatch.IsRunning)
+                Stopwatch markovStopwatch = null;
+
+                if (this.Context.Channel.Id != 329320797774675971 && markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch) && markovStopwatch.IsRunning && markovStopwatch.ElapsedMilliseconds < 60000)
                 {
-                    await this.ReplyAsync($"Please wait {100 - this.markovStopwatch.Elapsed.Seconds} seconds until using this command.");
+                    await this.ReplyAsync($"Please wait {60 - markovStopwatch.Elapsed.Seconds} seconds until using this command.");
                     return;
+                }
+
+                if (!markovStopwatches.ContainsKey(this.Context.Channel.Id) && this.Context.Channel.Id != 329320797774675971)
+                {
+                    markovStopwatches.Add(this.Context.Channel.Id, new Stopwatch());
+
+                    markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch);
                 }
 
                 if (!Directory.Exists(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)))
@@ -937,57 +1011,60 @@ namespace CSharpDewott.Commands
                         ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
                         TypeNameHandling = TypeNameHandling.Auto
                     }));
-
-                    Console.WriteLine(file);
                 }
 
-                File.WriteAllLines(Path.Combine(Program.AppPath, "currentuser.txt"), allCachedMessages.Select(e => e.Content));
+                File.WriteAllLines(Path.Combine(Program.AppPath, "Markovs", "currentuser.txt"), allCachedMessages.Select(e => e.Content));
 
-                File.WriteAllText(Path.Combine(Program.AppPath, "fileLoc.txt"), "currentuser.txt");
+                File.WriteAllText(Path.Combine(Program.AppPath, "Markovs", "fileLoc.txt"), "currentuser.txt");
 
                 ProcessStartInfo info = new ProcessStartInfo
                 {
                     FileName = "py",
-                    Arguments = $"-3 \"{Path.Combine(Program.AppPath, "markovNewline.py")}\"",
+                    Arguments = $"-3 \"{Path.Combine(Program.AppPath, "Markovs", "markovNewline.py")}\"",
                     UseShellExecute = false,
                     RedirectStandardOutput = true
                 };
 
                 Process markovProcess = Process.Start(info);
 
-                string output = markovProcess.StandardOutput.ReadToEnd();
+                string output = markovProcess?.StandardOutput.ReadToEnd();
 
                 Console.Out.WriteLine($"[python-output@{DateTime.Now.ToLongTimeString()}]: {output}");
 
-                while (!File.Exists(Path.Combine(Program.AppPath, "output.txt")))
+                while (!File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")))
                 {
                 }
 
-                if (string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "output.txt"))))
+                if (string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt"))))
                 {
                     await this.ReplyAsync("Markov creation failed!");
                 }
                 else
                 {
-                    await this.ReplyAsync(File.ReadAllText(Path.Combine(Program.AppPath, "output.txt")).Replace("@", string.Empty).Replace("\n", string.Empty));
+                    await this.ReplyAsync(Regex.Replace(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt")), @"<@[^\s]*([0-9]+)>", e =>
+                    {
+                        IGuildUser user = this.Context.Guild.GetUserAsync(Convert.ToUInt64(e.Value.Replace("@", string.Empty).Replace("!", string.Empty).Replace(">", string.Empty).Replace("<", string.Empty))).Result;
 
-                    this.markovStopwatch.Restart();
+                        return string.IsNullOrWhiteSpace(user.Nickname) ? user.Username : user.Nickname;
+                    }));
+
+                    markovStopwatch?.Restart();
                 }
             }
             catch (Exception e)
             {
                 Console.WriteLine(e);
 
-                if (!File.Exists(Path.Combine(Program.AppPath, "output.txt")) || string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "output.txt"))))
+                if (!File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")) || string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt"))))
                 {
                     await this.ReplyAsync("Markov creation failed!");
                 }
             }
             finally
             {
-                if (File.Exists(Path.Combine(Program.AppPath, "output.txt")))
+                if (File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")))
                 {
-                    File.Delete(Path.Combine(Program.AppPath, "output.txt"));
+                    File.Delete(Path.Combine(Program.AppPath, "Markovs", "output.txt"));
                 }
             }
         }
@@ -998,10 +1075,19 @@ namespace CSharpDewott.Commands
         {
             try
             {
-                if (this.markovStopwatch.Elapsed.Seconds < 100 && this.markovStopwatch.IsRunning)
+                Stopwatch markovStopwatch = null;
+
+                if (this.Context.Channel.Id != 329320797774675971 && markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch) && markovStopwatch.IsRunning && markovStopwatch.ElapsedMilliseconds < 60000)
                 {
-                    await this.ReplyAsync($"Please wait {100 - this.markovStopwatch.Elapsed.Seconds} seconds until using this command.");
+                    await this.ReplyAsync($"Please wait {60 - markovStopwatch.Elapsed.Seconds} seconds until using this command.");
                     return;
+                }
+
+                if (!markovStopwatches.ContainsKey(this.Context.Channel.Id) && this.Context.Channel.Id != 329320797774675971)
+                {
+                    markovStopwatches.Add(this.Context.Channel.Id, new Stopwatch());
+
+                    markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch);
                 }
 
                 if (user == null)
@@ -1024,59 +1110,62 @@ namespace CSharpDewott.Commands
                         ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
                         TypeNameHandling = TypeNameHandling.Auto
                     }));
-
-                    Console.WriteLine(file);
                 }
 
                 allCachedMessages = allCachedMessages.Where(e => e.Author.Id == user.Id).ToList();
 
-                File.WriteAllLines(Path.Combine(Program.AppPath, "currentuser.txt"), allCachedMessages.Select(e => e.Content));
+                File.WriteAllLines(Path.Combine(Program.AppPath, "Markovs", "currentuser.txt"), allCachedMessages.Select(e => e.Content));
 
-                File.WriteAllText(Path.Combine(Program.AppPath, "fileLoc.txt"), "currentuser.txt");
+                File.WriteAllText(Path.Combine(Program.AppPath, "Markovs", "fileLoc.txt"), "currentuser.txt");
 
                 ProcessStartInfo info = new ProcessStartInfo
                 {
                     FileName = "py",
-                    Arguments = $"-3 \"{Path.Combine(Program.AppPath, "markovNewline.py")}\"",
+                    Arguments = $"-3 \"{Path.Combine(Program.AppPath, "Markovs", "markovNewline.py")}\"",
                     UseShellExecute = false,
                     RedirectStandardOutput = true
                 };
 
                 Process markovProcess = Process.Start(info);
 
-                string output = markovProcess.StandardOutput.ReadToEnd();
+                string output = markovProcess?.StandardOutput.ReadToEnd();
 
                 Console.Out.WriteLine($"[python-output@{DateTime.Now.ToLongTimeString()}]: {output}");
 
-                while (!File.Exists(Path.Combine(Program.AppPath, "output.txt")))
+                while (!File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")))
                 {
                 }
 
-                if (string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "output.txt"))))
+                if (string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt"))))
                 {
                     await this.ReplyAsync("Markov creation failed!");
                 }
                 else
                 {
-                    await this.ReplyAsync(File.ReadAllText(Path.Combine(Program.AppPath, "output.txt")).Replace("@", string.Empty).Replace("\n", string.Empty));
+                    await this.ReplyAsync(Regex.Replace(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt")), @"<@[^\s]*([0-9]+)>", e =>
+                    {
+                        IGuildUser founduser = this.Context.Guild.GetUserAsync(Convert.ToUInt64(e.Value.Replace("@", string.Empty).Replace("!", string.Empty).Replace(">", string.Empty).Replace("<", string.Empty))).Result;
 
-                    this.markovStopwatch.Restart();
+                        return string.IsNullOrWhiteSpace(founduser.Nickname) ? founduser.Username : founduser.Nickname;
+                    }));
+
+                    markovStopwatch?.Restart();
                 }
             }
             catch (Exception e)
             {
                 Console.WriteLine(e);
 
-                if (!File.Exists(Path.Combine(Program.AppPath, "output.txt")) || string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "output.txt"))))
+                if (!File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")) || string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt"))))
                 {
                     await this.ReplyAsync("Markov creation failed!");
                 }
             }
             finally
             {
-                if (File.Exists(Path.Combine(Program.AppPath, "output.txt")))
+                if (File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")))
                 {
-                    File.Delete(Path.Combine(Program.AppPath, "output.txt"));
+                    File.Delete(Path.Combine(Program.AppPath, "Markovs", "output.txt"));
                 }
             }
         }
@@ -1090,10 +1179,19 @@ namespace CSharpDewott.Commands
                 List<ulong> requestedUsersIds = users.Select(e => e.Id).ToList();
                 requestedUsersIds.Add(this.Context.User.Id);
 
-                if (this.markovStopwatch.Elapsed.Seconds < 100 && this.markovStopwatch.IsRunning)
+                Stopwatch markovStopwatch = null;
+
+                if (this.Context.Channel.Id != 329320797774675971 && markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch) && markovStopwatch.IsRunning && markovStopwatch.ElapsedMilliseconds < 60000)
                 {
-                    await this.ReplyAsync($"Please wait {100 - this.markovStopwatch.Elapsed.Seconds} seconds until using this command.");
+                    await this.ReplyAsync($"Please wait {60 - markovStopwatch.Elapsed.Seconds} seconds until using this command.");
                     return;
+                }
+
+                if (!markovStopwatches.ContainsKey(this.Context.Channel.Id) && this.Context.Channel.Id != 329320797774675971)
+                {
+                    markovStopwatches.Add(this.Context.Channel.Id, new Stopwatch());
+
+                    markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch);
                 }
 
                 if (!Directory.Exists(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)))
@@ -1115,53 +1213,58 @@ namespace CSharpDewott.Commands
 
                 allCachedMessages = allCachedMessages.Where(e => requestedUsersIds.Contains(e.Author.Id)).ToList();
 
-                File.WriteAllLines(Path.Combine(Program.AppPath, "currentmulti.txt"), allCachedMessages.Select(e => e.Content));
+                File.WriteAllLines(Path.Combine(Program.AppPath, "Markovs", "currentmulti.txt"), allCachedMessages.Select(e => e.Content));
 
-                File.WriteAllText(Path.Combine(Program.AppPath, "fileLoc.txt"), "currentmulti.txt");
+                File.WriteAllText(Path.Combine(Program.AppPath, "Markovs", "fileLoc.txt"), "currentmulti.txt");
 
                 ProcessStartInfo info = new ProcessStartInfo
                 {
                     FileName = "py",
-                    Arguments = $"-3 \"{Path.Combine(Program.AppPath, "markovNewline.py")}\"",
+                    Arguments = $"-3 \"{Path.Combine(Program.AppPath, "Markovs", "markovNewline.py")}\"",
                     UseShellExecute = false,
                     RedirectStandardOutput = true
                 };
 
                 Process markovProcess = Process.Start(info);
 
-                string output = markovProcess.StandardOutput.ReadToEnd();
+                string output = markovProcess?.StandardOutput.ReadToEnd();
 
                 Console.Out.WriteLine($"[python-output@{DateTime.Now.ToLongTimeString()}]: {output}");
 
-                while (!File.Exists(Path.Combine(Program.AppPath, "output.txt")))
+                while (!File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")))
                 {
                 }
 
-                if (string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "output.txt"))))
+                if (string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt"))))
                 {
                     await this.ReplyAsync("Markov creation failed!");
                 }
                 else
                 {
-                    await this.ReplyAsync(File.ReadAllText(Path.Combine(Program.AppPath, "output.txt")).Replace("@", string.Empty).Replace("\n", string.Empty));
+                    await this.ReplyAsync(Regex.Replace(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt")), @"<@[^\s]*([0-9]+)>", e =>
+                    {
+                        IGuildUser user = this.Context.Guild.GetUserAsync(Convert.ToUInt64(e.Value.Replace("@", string.Empty).Replace("!", string.Empty).Replace(">", string.Empty).Replace("<", string.Empty))).Result;
 
-                    this.markovStopwatch.Restart();
+                        return string.IsNullOrWhiteSpace(user.Nickname) ? user.Username : user.Nickname;
+                    }));
+
+                    markovStopwatch?.Restart();
                 }
             }
             catch (Exception e)
             {
                 Console.WriteLine(e);
 
-                if (!File.Exists(Path.Combine(Program.AppPath, "output.txt")) || string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "output.txt"))))
+                if (!File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")) || string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt"))))
                 {
                     await this.ReplyAsync("Markov creation failed!");
                 }
             }
             finally
             {
-                if (File.Exists(Path.Combine(Program.AppPath, "output.txt")))
+                if (File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")))
                 {
-                    File.Delete(Path.Combine(Program.AppPath, "output.txt"));
+                    File.Delete(Path.Combine(Program.AppPath, "Markovs", "output.txt"));
                 }
             }
         }
@@ -1186,13 +1289,9 @@ namespace CSharpDewott.Commands
         }
 
         [Command("connect")]
-        [Summary("Randomly plays a different song. Can only be called by non-admin once every minute\nIf the bot disconnects from the voice channel this will also reconnect it.")]
+        [Summary("Randomly plays a different song. Can only be called by non-admin once every minute\nIf the bot disconnects from the voice channel this will also reconnect it."), AdminPrecondition]
         public async Task JoinVoiceChannel(IVoiceChannel channel = null)
         {
-            if (!Whitelist.Contains(this.Context.User.Id))
-            {
-                return;
-            }
 
             channel = channel ?? (await this.Context.Guild.GetVoiceChannelsAsync()).First(e => e.Name.ToLower().Contains("music"));
 
@@ -1494,32 +1593,64 @@ namespace CSharpDewott.Commands
         [Command("help")]
         public async Task Help(string text = "")
         {
+
+            Image image = null;
+
+            if (HttpHelper.URLExists("https://play.pokemonshowdown.com/sprites/xyani/dewott.gif"))
+            {
+                byte[] imageBytes = await Program.Instance.HttpClient.GetByteArrayAsync("https://play.pokemonshowdown.com/sprites/xyani/dewott.gif");
+
+                using (MemoryStream ms = new MemoryStream(imageBytes))
+                {
+                    image = Image.FromStream(ms);
+                }
+            }
+
+            if (image != null)
+            {
+                if (File.Exists(Path.Combine(this.AppPath, "pokemon.gif")))
+                {
+                    File.Delete(Path.Combine(this.AppPath, "pokemon.gif"));
+                }
+
+                image.Save(Path.Combine(this.AppPath, "pokemon.gif"));
+
+                await (await this.Context.User.GetOrCreateDMChannelAsync()).SendFileAsync(Path.Combine(this.AppPath, "pokemon.gif"));
+            }
+
             if (text == string.Empty)
             {
                 EmbedBuilder builder = new EmbedBuilder();
-                builder.Color = new Discord.Color(Color.Green.R, Color.Green.G, Color.Green.B);
+                builder.WithColor(Color.FromArgb(163, 214, 227));
                 builder.Title = "List of commands:";
 
                 string commands = string.Empty;
 
                 foreach (CommandInfo commandServiceCommand in Globals.CommandService.Commands)
                 {
+                    if (!(await commandServiceCommand.CheckPreconditionsAsync(this.Context)).IsSuccess)
+                    {
+                        continue;
+                    }
+
                     commands += $"{commandServiceCommand.Name}\n";
                 }
 
                 builder.Description = commands;
-                builder.Footer = new EmbedFooterBuilder
-                {
-                    Text = "This lists *all* commands so keep in mind some of these are admin only"
-                };
 
-                await this.Context.Channel.SendMessageAsync(string.Empty, false, builder.Build());
+                await (await this.Context.User.GetOrCreateDMChannelAsync()).SendMessageAsync(string.Empty, false, builder.Build());
             }
             else if (Globals.CommandService.Commands.ToList().Find(e => e.Name == text) != null)
             {
                 EmbedBuilder builder = new EmbedBuilder();
 
                 CommandInfo requestedInfo = Globals.CommandService.Commands.ToList().Find(e => e.Name == text);
+
+                if (!(await requestedInfo.CheckPreconditionsAsync(this.Context)).IsSuccess)
+                {
+                    await this.ReplyAsync((await requestedInfo.CheckPreconditionsAsync(this.Context)).ErrorReason);
+                    return;
+                }
 
                 builder.Title = text;
                 builder.Description = string.Empty;
@@ -1613,9 +1744,73 @@ namespace CSharpDewott.Commands
             }
         }
 
-        [Summary("Get info about the user, or another user if requested")]
-        [Command("userinfo")]
-        [Alias("user")]
+        [Command("setgame"), AdminPrecondition, Summary("Sets the \"Playing\" text")]
+        public async Task SetGameText(string gametext)
+        {
+            await Program.Client.SetGameAsync(gametext);
+        }
+
+        [Command("botinfo"), Summary("Gets info about CSharpDewott#5238.")]
+        public async Task BotInfo()
+        {
+            IGuildUser botGuildUser = await this.Context.Guild.GetUserAsync(this.Context.Client.CurrentUser.Id);
+
+            EmbedBuilder builder = new EmbedBuilder
+            {
+                Title = "CSharpDewott#5238, created by Jordan Zeotni (JordantheDewott#8352)",
+                ThumbnailUrl = "https://play.pokemonshowdown.com/sprites/xyani/dewott.gif",
+                Fields = new List<EmbedFieldBuilder>
+                {
+                    new EmbedFieldBuilder
+                    {
+                        IsInline = true,
+                        Name = "Created on:",
+                        Value = this.Context.Client.CurrentUser.CreatedAt
+                    },
+
+                    new EmbedFieldBuilder
+                    {
+                        IsInline = true,
+                        Name = "Id",
+                        Value = this.Context.Client.CurrentUser.Id
+                    },
+
+                    new EmbedFieldBuilder
+                    {
+                        IsInline = false,
+                        Name = "Permissions",
+                        Value = string.Join(", ", botGuildUser.GuildPermissions.ToList().Select(e => Enum.GetName(typeof(GuildPermission), e)))
+                    }
+                }
+            };
+
+            await this.ReplyAsync(string.Empty, false, builder.Build());
+
+        }
+
+        [Command("timer")]
+        public async Task TimerTest()
+        {
+            /*if (markovStopwatch.IsRunning)
+            {
+                if (this.Context.Channel.Id != 329320797774675971 && markovStopwatch.ElapsedMilliseconds < 200000)
+                {
+                    await this.ReplyAsync("*insert wait text here*");
+
+                    return;
+                }
+
+                await this.ReplyAsync("Restarting...");
+
+                return;
+            }
+
+            markovStopwatch.Start();
+
+            await this.ReplyAsync("Starting...");*/
+        }
+
+        [Summary("Get info about the user, or another user if requested"), Command("userinfo"), Alias("user")]
         public async Task UserInfo(
             [Summary("Optional user to request. Must be in quotes if there is a space in the name.")]
             IGuildUser user = null)
@@ -1849,12 +2044,94 @@ namespace CSharpDewott.Commands
             }
         }
 
-        [Summary("Gets item from PMDO's database")]
+        [Summary("Gets item from multiple sources")]
         [Command("item")]
         public async Task Item(
             [Summary("Item to search. Must be in quotes")]
             string item)
         {
+
+            if (ItemList.AllItems == null)
+            {
+                ItemHelper.InitializeItems();
+            }
+
+            if (ItemList.AllItems == null)
+            {
+                return;
+            }
+
+            if (ItemList.AllItems.Any(e => string.Equals(e.Id, item, StringComparison.CurrentCultureIgnoreCase) || string.Equals(e.Name, item, StringComparison.CurrentCultureIgnoreCase)))
+            {
+                Item requestedItem = ItemList.AllItems.First(e => string.Equals(e.Id, item, StringComparison.CurrentCultureIgnoreCase) || string.Equals(e.Name, item, StringComparison.CurrentCultureIgnoreCase));
+
+                EmbedBuilder builder = new EmbedBuilder
+                {
+                    Title = requestedItem.Name,
+                    Description = requestedItem.Description,
+                    Footer = new EmbedFooterBuilder
+                    {
+                        Text = $"#{requestedItem.ItemNum}"
+                    }
+                };
+
+                if (requestedItem.Fling != null)
+                {
+                    builder.Fields.Add(new EmbedFieldBuilder
+                    {
+                        IsInline = true,
+                        Name = "Fling Move stats",
+                        Value = $"Base Power: {requestedItem.Fling.BasePower}"
+                    });
+                }
+
+                if (requestedItem.Generation != null)
+                {
+                    builder.Fields.Add(new EmbedFieldBuilder
+                    {
+                        IsInline = true,
+                        Name = "First added in:",
+                        Value = requestedItem.Generation.GetName()
+                    });
+                }
+
+                if (requestedItem.NaturalGiftInfo != null)
+                {
+                    builder.Fields.Add(new EmbedFieldBuilder
+                    {
+                        IsInline = true,
+                        Name = "Natural Gift Move stats",
+                        Value = $"Base Power: {requestedItem.NaturalGiftInfo.BasePower}\nType: {requestedItem.NaturalGiftInfo.MoveType}"
+                    });
+                }
+
+                if (requestedItem.MegaEvolves != null)
+                {
+                    builder.Fields.Add(new EmbedFieldBuilder
+                    {
+                        IsInline = true,
+                        Name = "Mega Evolves:",
+                        Value = requestedItem.MegaEvolves
+                    });
+                }
+
+                if (requestedItem.MegaStone != null)
+                {
+                    builder.Fields.Add(new EmbedFieldBuilder
+                    {
+                        IsInline = true,
+                        Name = "Mega Form:",
+                        Value = requestedItem.MegaStone
+                    });
+                }
+
+                builder.Footer.IconUrl = $"https://raw.githubusercontent.com/110Percent/beheeyem-data/master/sprites/items/{requestedItem.Name.ToLower().Replace(" ", "-").Replace("'", string.Empty)}.png"; // https://raw.githubusercontent.com/110Percent/beheeyem-data/master/sprites/items/" + item.name.toLowerCase().replace(" ", "-").replace("'", "") + ".png"
+
+                await this.ReplyAsync(string.Empty, false, builder.Build());
+
+                return;
+            }
+
             string hostName = "localhost";
 
             string cs = @"server=" + hostName + @";userid=jordan;database=pmu_data;password=JordantheBuizel;";
@@ -1883,23 +2160,28 @@ namespace CSharpDewott.Commands
 
             try
             {
+                EmbedBuilder builder = new EmbedBuilder();
+
                 string itemName = item;
 
                 string info = string.Empty;
+                int picNum = -1;
 
                 itemName = itemName.Replace("\'", "\'\'").Replace("\\", string.Empty);
                 itemName = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(itemName);
 
-                MySqlCommand command =
-                    new MySqlCommand($"SELECT info FROM `item` WHERE name = '{itemName}'", conn);
+                builder.Title = itemName;
+
+                MySqlCommand command = new MySqlCommand($"SELECT info, pic FROM `item` WHERE name = '{itemName}'", conn);
                 MySqlDataReader reader = command.ExecuteReader();
 
                 while (reader.Read())
                 {
                     info = reader.GetString("info");
+                    picNum = reader.GetInt32("pic");
                 }
 
-                if (info == string.Empty)
+                if (info == string.Empty || info.ToLower() == "empty" || picNum == -1)
                 {
                     await this.Context.Channel.SendMessageAsync("Item not found!");
                     return;
@@ -1907,13 +2189,185 @@ namespace CSharpDewott.Commands
 
                 reader.Close();
 
-                await this.Context.Channel.SendMessageAsync($"{itemName}\nDiscription: {info}");
+                using (Bitmap bmp = new Bitmap(32, 32))
+                using (Graphics gra = Graphics.FromImage(bmp))
+                {
+                    int y = picNum / 6 * 32;
+                    int x = Math.Abs((int)(((double)picNum / 6 - y) * 6 * 32));
+
+                    gra.DrawImage(Resources.Items, new Rectangle(0, 0, 32, 32), new Rectangle(x, y, 32, 32), GraphicsUnit.Pixel);
+
+                    if (Directory.Exists($"C:\\Abyss Web Server\\htdocs\\") && !File.Exists($"C:\\Abyss Web Server\\htdocs\\{itemName.Replace(" ", "_")}.png"))
+                    {
+                        bmp.Save($"C:\\Abyss Web Server\\htdocs\\{itemName.Replace(" ", "_")}.png", ImageFormat.Png);
+                    }
+                }
+
+                builder.ThumbnailUrl = $"http://209.141.45.22/{itemName.Replace(" ", "_")}.png";
+                builder.Description = info;
+
+                await this.Context.Channel.SendMessageAsync(string.Empty, false, builder.Build());
             }
-            catch
+            catch (Exception ex)
             {
+                ConsoleHelper.WriteLine(ex);
             }
         }
 
+        [Command("stats"), Summary("Gets random info about the server."), Alias("stat", "serverinfo")]
+        public async Task Stats()
+        {
+            List<DeserializedMessage> allCachedMessages = new List<DeserializedMessage>();
+
+            foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)))
+            {
+                allCachedMessages.AddRange(JsonConvert.DeserializeObject<List<DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
+                {
+                    PreserveReferencesHandling = PreserveReferencesHandling.Objects,
+                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+                    TypeNameHandling = TypeNameHandling.Auto
+                }));
+            }
+
+            EmbedBuilder builder = new EmbedBuilder
+            {
+                Title = $"Stats for {this.Context.Guild.Name}",
+                ThumbnailUrl = this.Context.Guild.IconUrl
+            };
+
+            List<int> messegesInAWeek = new List<int>();
+
+            for (int i = 1; i < 7; i++)
+            {
+                if (DateTime.Now.Day - i > 0)
+                {
+                    messegesInAWeek.Add(allCachedMessages.Count(e => e.Timestamp.Day == DateTime.Now.Day - i && e.Timestamp.Month == DateTime.Now.Month));
+                }
+                else
+                {
+                    int overflow = i - DateTime.Now.Day;
+
+                    int month = DateTime.Now.Month - 1;
+
+                    int day = DateTime.DaysInMonth(DateTime.Now.Year, month) - overflow;
+
+                    messegesInAWeek.Add(allCachedMessages.Count(e => e.Timestamp.Day == day && e.Timestamp.Month == month));
+                }
+            }
+
+            int averageMessages = messegesInAWeek.Sum() / messegesInAWeek.Count;
+
+            builder.Fields.Add(new EmbedFieldBuilder
+            {
+                IsInline = false,
+                Name = "Average messeges per day in the last week",
+                Value = averageMessages
+            });
+
+            builder.Fields.Add(new EmbedFieldBuilder
+            {
+                IsInline = false,
+                Name = "Total messages in server's lifetime",
+                Value = allCachedMessages.Count
+            });
+
+            Dictionary<ulong, int> userMessageCountDictionary = (await this.Context.Guild.GetUsersAsync()).ToDictionary(guildUser => guildUser.Id, guildUser => allCachedMessages.Count(e => e.Author.Id == guildUser.Id));
+
+            builder.Fields.Add(new EmbedFieldBuilder
+            {
+                IsInline = false,
+                Name = "User with the most messages",
+                Value = (await this.Context.Guild.GetUserAsync(userMessageCountDictionary.Aggregate((l, r) => l.Value > r.Value ? l : r).Key)).Username
+            });
+
+            Dictionary<ulong, int> channelMessageCountDictionary = (await this.Context.Guild.GetTextChannelsAsync()).ToDictionary(channel => channel.Id, channel => allCachedMessages.Count(e => e.Channel.Id == channel.Id));
+
+            builder.Fields.Add(new EmbedFieldBuilder
+            {
+                IsInline = false,
+                Name = "Channel with the most messages",
+                Value = (await this.Context.Guild.GetTextChannelAsync(channelMessageCountDictionary.Aggregate((l, r) => l.Value > r.Value ? l : r).Key)).Name
+            });
+
+            /*string mostCommon5 = allCachedMessages
+                .SelectMany(e => 
+                    Regex.Matches(e.Content, @"[A-Za-z-']+")
+                        .OfType<Match>()
+                        .Select(match => CultureInfo.InvariantCulture.TextInfo.ToTitleCase(match.Value))
+                        .GroupBy(word => word)
+                        .Select(chunk => new
+                        {
+                            word = chunk.Key,
+                            count = chunk.Count()
+                        })
+                        .OrderByDescending(item => item.count)
+                        .ThenBy(item => item.word)
+                        .Take(5).Select(f => f.word))
+                .Aggregate((a, b) => a + ", " + b);
+
+            builder.Fields.Add(new EmbedFieldBuilder
+            {
+                IsInline = true,
+                Name = "Top 5 words",
+                Value = mostCommon5
+            });*/
+
+            await this.ReplyAsync(string.Empty, false, builder.Build());
+        }
+
+        [Command("r34proof")]
+        public async Task ProofTask()
+        {
+            return;
+
+            /*List<string> PokemonNames = Constants.AllPokemonNamesList.Select(e => e.Replace(" ", "_").Replace(":", string.Empty).ToLower()).ToList();
+
+            EmbedBuilder builder = new EmbedBuilder
+            {
+                Title = "I can't believe you are this naive"
+            };
+
+            int completed = 0;
+
+            foreach (string pokemonName in PokemonNames)
+            {
+                await this.Context.Channel.TriggerTypingAsync();
+
+                string url = $"https://e621.net/post/index.json?limit=320&tags={pokemonName} rating:e";
+
+                string e6Json = await Program.Instance.HttpClient.GetStringAsync(url);
+
+                JArray images = JArray.Parse(e6Json);
+
+                completed++;
+
+                if (800 % completed == 0)
+                {
+                    await this.ReplyAsync($"{(double)completed / 800 * 100}% complete.");
+                }
+
+                if (images.Count == 0)
+                {
+                    await (await this.Context.User.GetOrCreateDMChannelAsync()).SendMessageAsync($"{pokemonName}");
+                    continue;
+                }
+
+                builder.Fields.Add(new EmbedFieldBuilder
+                {
+                    IsInline = true,
+                    Name = pokemonName,
+                    Value = $"Counted {images.Count} explict images."
+                });
+            }*/
+
+            //await this.ReplyAsync(string.Empty, false, builder.Build());
+        }
+
+        [Command("why")]
+        public async Task Why()
+        {
+            await this.ReplyAsync("https://www.youtube.com/watch?v=XW5Lmq4mwQs");
+        }
         
         [Command("pkinfo"), Summary("Retrieves the requested Pokémon's data from a customly built library"), Alias("poke", "pokeinfo")]
         public async Task PokemonInfo(
@@ -1934,7 +2388,7 @@ namespace CSharpDewott.Commands
 
                 if (PokéDex.InstanceDex == null)
                 {
-                    Console.WriteLine("[.pokeinfo] Instance is still null!");
+                    Console.WriteLine("[Command 'pokeinfo']: Instance is still null!");
                     return;
                 }
 
@@ -1954,20 +2408,38 @@ namespace CSharpDewott.Commands
 
                 parsedImageUrl = $"https://play.pokemonshowdown.com/sprites/xyani/{requestedPokémon.SpeciesName}.gif";
 
-                parsedImageUrl = parsedImageUrl.Replace("Mime Jr.", "mimejr").Replace("Mr. Mime", "mrmime").Replace("Type: Null", "typenull").Replace("Nidoran-F", "nidoranf").Replace("Nidoran-M", "nidoranm").ToLower();
+                parsedImageUrl = parsedImageUrl.Replace("Mime Jr.", "mimejr").Replace("Mr. Mime", "mrmime").Replace("Type: Null", "typenull").Replace("Nidoran-F", "nidoranf").Replace("Nidoran-M", "nidoranm").Replace("Ho-Oh", "hooh").Replace("Hakamo-o", "hakamoo").Replace("Kammo-o", "kammoo").Replace("Porygon-Z", "porygonz").Replace("Zygarde-10%", "zygarde-10").ToLower();
+                
+                // Currently has issues
+                // builder.ThumbnailUrl = parsedImageUrl;
 
-                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(parsedImageUrl);
-                request.Method = WebRequestMethods.Http.Head;
-                HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-                if (response.StatusCode != HttpStatusCode.OK)
+                // So we do this instead :^)
+                Image image = null;
+
+                if (HttpHelper.URLExists(parsedImageUrl))
                 {
-                    await this.ReplyAsync($"{(await this.Context.Channel.GetUserAsync(228019100008316948)).Mention} Sprite <{parsedImageUrl}> does not exist!");
-                    return;
+                    byte[] imageBytes = await Program.Instance.HttpClient.GetByteArrayAsync(parsedImageUrl);
+
+                    using (MemoryStream ms = new MemoryStream(imageBytes))
+                    {
+                        image = Image.FromStream(ms);
+                    }
                 }
 
-                builder.ImageUrl = parsedImageUrl;
+                if (image != null)
+                {
+                    if (File.Exists(Path.Combine(this.AppPath, "pokemon.gif")))
+                    {
+                        File.Delete(Path.Combine(this.AppPath, "pokemon.gif"));
+                    }
 
-                builder.WithColor(requestedPokémon.Color);
+                    image.Save(Path.Combine(this.AppPath, "pokemon.gif"));
+
+                    await this.Context.Channel.SendFileAsync(Path.Combine(this.AppPath, "pokemon.gif"));
+                }
+
+                // Back to your regularlly scheduled builder
+                builder.WithColor(requestedPokémon.Color.Name == "Brown" ? Color.FromArgb(40, 26, 13) : requestedPokémon.Color);
 
                 builder.Fields.Add(new EmbedFieldBuilder
                 {
@@ -2015,7 +2487,7 @@ namespace CSharpDewott.Commands
                 {
                     IsInline = false,
                     Name = "Base stats",
-                    Value = $"{requestedPokémon.BaseStats.Hp}/{requestedPokémon.BaseStats.Attack}/{requestedPokémon.BaseStats.Defense}/{requestedPokémon.BaseStats.SpecialAttack}/{requestedPokémon.BaseStats.SpecialDefense}/{requestedPokémon.BaseStats.Speed}"
+                    Value = $"HP: {requestedPokémon.BaseStats.Hp} ATK: {requestedPokémon.BaseStats.Attack} DEF: {requestedPokémon.BaseStats.Defense} SPATK: {requestedPokémon.BaseStats.SpecialAttack} SPDEF: {requestedPokémon.BaseStats.SpecialDefense} SPE: {requestedPokémon.BaseStats.Speed}"
                 });
 
                 builder.Fields.Add(new EmbedFieldBuilder

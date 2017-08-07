@@ -1,8 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Drawing;
 using System.Globalization;
+using System.Linq;
 using Humanizer;
+using CSharpDewott.Extensions;
+using Discord;
+using Color = System.Drawing.Color;
 
 namespace CSharpDewott.PokémonInfo.Pokémon
 {
@@ -54,6 +57,36 @@ namespace CSharpDewott.PokémonInfo.Pokémon
             if (mon.SpeciesName.ToLower() == "typenull")
             {
                 mon.SpeciesName = "Type: Null";
+            }
+
+            if (mon.SpeciesName.ToLower() == "hooh")
+            {
+                mon.SpeciesName = "Ho-Oh";
+            }
+
+            if (mon.SpeciesName.ToLower() == "hakamoo")
+            {
+                mon.SpeciesName = "Hakamo-o";
+            }
+
+            if (mon.SpeciesName.ToLower() == "jangmoo")
+            {
+                mon.SpeciesName = "Jangmo-o";
+            }
+
+            if (mon.SpeciesName.ToLower() == "kommoo")
+            {
+                mon.SpeciesName = "Kommo-o";
+            }
+
+            if (mon.SpeciesName.ToLower() == "porygonz")
+            {
+                mon.SpeciesName = "Porygon-Z";
+            }
+
+            if (mon.SpeciesName.Contains('-', '.', ':'))
+            {
+                //IUserMessage _ = Program.Client.GetUser(228019100008316948).GetOrCreateDMChannelAsync().Result.SendMessageAsync($"Pokémon {mon.SpeciesName} not parsed!").Result;
             }
 
             return mon;

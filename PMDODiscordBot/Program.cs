@@ -12,12 +12,15 @@ using System.Threading.Tasks;
 using System.Xml;
 using CSharpDewott.Deserialization;
 using CSharpDewott.ESixOptions;
+using CSharpDewott.Extensions;
 using CSharpDewott.GameInfo;
 using CSharpDewott.IO;
+using CSharpDewott.Preconditions;
 using Discord;
 using Discord.Commands;
 using Discord.WebSocket;
 using Newtonsoft.Json;
+using Image = System.Drawing.Image;
 
 namespace CSharpDewott
 {
@@ -42,107 +45,6 @@ namespace CSharpDewott
 
 
         // private IAudioClient vClient;
-
-        /// <summary>
-        /// Ordered types of Pokémon, Compliant with PMDO SQL server
-        /// </summary>
-        public enum PokemonType
-        {
-            /// <summary>
-            /// Type to designate error or no secondary type
-            /// </summary>
-            None,
-
-            /// <summary>
-            /// Bug type
-            /// </summary>
-            Bug,
-
-            /// <summary>
-            /// Dark type
-            /// </summary>
-            Dark,
-
-            /// <summary>
-            /// Dragon type
-            /// </summary>
-            Dragon,
-
-            /// <summary>
-            /// Electric type
-            /// </summary>
-            Electric,
-
-            /// <summary>
-            /// Fairy type
-            /// </summary>
-            Fairy,
-
-            /// <summary>
-            /// Fighting type
-            /// </summary>
-            Fighting,
-
-            /// <summary>
-            /// Fire type
-            /// </summary>
-            Fire,
-
-            /// <summary>
-            /// Flying type
-            /// </summary>
-            Flying,
-
-            /// <summary>
-            /// Ghost type
-            /// </summary>
-            Ghost,
-
-            /// <summary>
-            /// Grass type
-            /// </summary>
-            Grass,
-
-            /// <summary>
-            /// Ground type
-            /// </summary>
-            Ground,
-
-            /// <summary>
-            /// Ice type
-            /// </summary>
-            Ice,
-
-            /// <summary>
-            /// Normal type
-            /// </summary>
-            Normal,
-
-            /// <summary>
-            /// Poison type
-            /// </summary>
-            Poison,
-
-            /// <summary>
-            /// Psychic type
-            /// </summary>
-            Psychic,
-
-            /// <summary>
-            /// Rock type
-            /// </summary>
-            Rock,
-
-            /// <summary>
-            /// Steel type
-            /// </summary>
-            Steel,
-
-            /// <summary>
-            /// Water type
-            /// </summary>
-            Water
-        }
 
         /// <summary>
         /// Bot's main method
@@ -205,6 +107,13 @@ namespace CSharpDewott
             try
             {
                 await Client.SetGameAsync("gathering logs, may be slow");
+                foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", "Jordan's a Fucking Dewott")))
+                {
+                    if (!Client.GetGuild(329174505371074560).TextChannels.Select(e => e.Name).Contains(Path.GetFileNameWithoutExtension(file)))
+                    {
+                        File.Delete(file);
+                    }
+                }
 
                 foreach (SocketTextChannel socketGuildChannel in Client.GetGuild(329174505371074560).TextChannels)
                 {
@@ -216,7 +125,7 @@ namespace CSharpDewott
 
                     foreach (IReadOnlyCollection<IMessage> readOnlyCollection in messagesList)
                     {
-                        messages.AddRange(readOnlyCollection.Select(e => new DeserializedMessage(e.Id, e.IsTTS, e.IsPinned, e.Content, e.Timestamp, e.EditedTimestamp, e.CreatedAt, new DeserializableUser(e.Author.Id, e.Author.CreatedAt, e.Author.Mention, e.Author.AvatarId, e.Author.DiscriminatorValue, e.Author.Discriminator, e.Author.IsBot, e.Author.IsWebhook, e.Author.Username))));
+                        messages.AddRange(readOnlyCollection.Select(e => new DeserializedMessage(e.Id, e.IsTTS, e.IsPinned, e.Content, e.Timestamp, e.EditedTimestamp, e.CreatedAt, new DeserializableUser(e.Author.Id, e.Author.CreatedAt, e.Author.Mention, e.Author.AvatarId, e.Author.DiscriminatorValue, e.Author.Discriminator, e.Author.IsBot, e.Author.IsWebhook, e.Author.Username), new DeserializedChannel(e.Channel.Id, e.Channel.CreatedAt, e.Channel.Name, e.Channel.IsNsfw))));
                     }
 
                     File.WriteAllText(Path.Combine(AppPath, "Logs", Client.GetGuild(329174505371074560).Name, new string(socketGuildChannel.Name.ToCharArray().Where(e => !Path.GetInvalidFileNameChars().Contains(e)).ToArray()) + ".xml"), JsonConvert.SerializeObject(messages, Newtonsoft.Json.Formatting.Indented, new JsonSerializerSettings
@@ -318,7 +227,37 @@ namespace CSharpDewott
 
             this.lastMessages.Add(message.Id, message);
 
+            // Add string testing after the argPos
             int argPos = 0;
+
+            if (message.Content.StartsWith("*") & message.Content.EndsWith("*") || message.Content.StartsWith("_") & message.Content.EndsWith("_"))
+            {
+                string potentialRequest = message.Content.Replace("*", string.Empty).Replace("_", string.Empty).ToLower();
+
+                Image image = null;
+
+                if (HttpHelper.URLExists($"https://play.pokemonshowdown.com/sprites/xyani/{potentialRequest}.gif"))
+                {
+                    byte[] imageBytes = await this.HttpClient.GetByteArrayAsync($"https://play.pokemonshowdown.com/sprites/xyani/{potentialRequest}.gif");
+
+                    using (MemoryStream ms = new MemoryStream(imageBytes))
+                    {
+                        image = Image.FromStream(ms);
+                    }
+                }
+
+                if (image != null)
+                {
+                    if (File.Exists(Path.Combine(AppPath, "pokemon.gif")))
+                    {
+                        File.Delete(Path.Combine(AppPath, "pokemon.gif"));
+                    }
+
+                    image.Save(Path.Combine(AppPath, "pokemon.gif"));
+
+                    await message.Channel.SendFileAsync(Path.Combine(AppPath, "pokemon.gif"));
+                }
+            }
 
             if (message.Content.StartsWith(".e6 set"))
             {
@@ -341,7 +280,7 @@ namespace CSharpDewott
 
                     if (message.Content.Split(' ').Length < 4)
                     {
-                        await message.Channel.SendMessageAsync("The command setup is `.e6 set [tags|sources|Id] [true|false]`.\nBy default all options are false.");
+                        await message.Channel.SendMessageAsync("The command setup is `.e6 set [tags|sources] [true|false]`.\nBy default all options are false.");
                         return;
                     }
 
@@ -371,19 +310,6 @@ namespace CSharpDewott
                                 else
                                 {
                                     await message.Channel.SendMessageAsync("Option \"Sources\" requires either true or false as the value");
-                                    return;
-                                }
-                            }
-                            break;
-                        case "id":
-                            {
-                                if (bool.TryParse(message.Content.Split(' ')[3], out bool result))
-                                {
-                                    options.DisplayId = result;
-                                }
-                                else
-                                {
-                                    await message.Channel.SendMessageAsync("Option \"Id\" requires either true or false as the value");
                                     return;
                                 }
                             }
@@ -490,7 +416,7 @@ namespace CSharpDewott
 
                 string commandName = message.Content.Substring(1).Split(' ')[0].Trim();
 
-                if (!Commands.Commands.Whitelist.Contains(message.Author.Id) && !message.Author.IsBot)
+                if (!AdminPrecondition.Whitelist.Contains(message.Author.Id) && !message.Author.IsBot)
                 {
 
                     if (File.Exists(Path.Combine(Program.AppPath, "blacklists", $"{commandName}.txt")))

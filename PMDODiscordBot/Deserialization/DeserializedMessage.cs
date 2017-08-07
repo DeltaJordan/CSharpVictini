@@ -32,7 +32,7 @@ namespace CSharpDewott.Deserialization
         public IReadOnlyCollection<ulong> MentionedRoleIds { get; set; }
         public IReadOnlyCollection<ulong> MentionedUserIds { get; set; }
 
-        public DeserializedMessage(ulong Id, bool IsTTS, bool IsPinned, string Content, DateTimeOffset Timestamp, DateTimeOffset? EditedTimestamp, DateTimeOffset CreatedAt, DeserializableUser author)
+        public DeserializedMessage(ulong Id, bool IsTTS, bool IsPinned, string Content, DateTimeOffset Timestamp, DateTimeOffset? EditedTimestamp, DateTimeOffset CreatedAt, DeserializableUser author, IMessageChannel channel)
         {
             this.Id = Id;
             this.IsTTS = IsTTS;
@@ -42,6 +42,7 @@ namespace CSharpDewott.Deserialization
             this.EditedTimestamp = EditedTimestamp;
             this.CreatedAt = CreatedAt;
             this.Author = author;
+            this.Channel = channel;
         }
     }
 }
