@@ -10,7 +10,7 @@ namespace CSharpDewott.Extensions
 {
     public static class HttpHelper
     {
-        public static bool URLExists(string url)
+        public static bool UrlExists(string url)
         {
             bool result = false;
 
@@ -25,9 +25,8 @@ namespace CSharpDewott.Extensions
                 response = (HttpWebResponse)webRequest.GetResponse();
                 result = true;
             }
-            catch (WebException webException)
+            catch (WebException)
             {
-                Console.WriteLine(url + " doesn't exist: " + webException.Message);
             }
             finally
             {

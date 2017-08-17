@@ -10,11 +10,13 @@ using System.Net.Http;
 using System.Reflection;
 using System.Threading.Tasks;
 using System.Xml;
+using CSharpDewott.Commands;
 using CSharpDewott.Deserialization;
 using CSharpDewott.ESixOptions;
 using CSharpDewott.Extensions;
 using CSharpDewott.GameInfo;
 using CSharpDewott.IO;
+using CSharpDewott.Logging;
 using CSharpDewott.Preconditions;
 using Discord;
 using Discord.Commands;
@@ -39,8 +41,6 @@ namespace CSharpDewott
         public HttpClient HttpClient;
 
         public static DiscordSocketClient Client;
-        private CommandService commands;
-        private int currentGuesses;
         private Dictionary<ulong, SocketUserMessage> lastMessages = new Dictionary<ulong, SocketUserMessage>();
 
 
@@ -56,21 +56,12 @@ namespace CSharpDewott
 
             Client = new DiscordSocketClient(new DiscordSocketConfig
             {
-                // WebSocketProvider = WS4NetProvider.Instance,
-                LogLevel = LogSeverity.Info,
-                MessageCacheSize = 1000
+                MessageCacheSize = 5
             });
 
-            this.commands = new CommandService(new CommandServiceConfig
-            {
-                DefaultRunMode = RunMode.Async
-            });
+            Client.Ready += Client_Ready;
 
-            this.commands.Log += Log;
-            Client.Log += Log;
-            Client.Ready += this.Client_Ready;
-
-            await this.InstallCommands();
+            await LogHandler.InititializeLogs();
 
             XmlDocument doc = new XmlDocument();
             doc.Load(Path.Combine(AppPath, "config.xml"));
@@ -97,19 +88,21 @@ namespace CSharpDewott
 
             await Client.StartAsync();
 
+            await CommandHandler.InitializeCommandHandler();
+
             Instance = this;
 
             await Task.Delay(-1);
         }
 
-        public async Task Client_Ready()
+        public static async Task Client_Ready()
         {
             try
             {
                 await Client.SetGameAsync("gathering logs, may be slow");
-                foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", "Jordan's a Fucking Dewott")))
+                foreach (string file in Directory.GetFiles(Path.Combine(AppPath, "Logs", "Jordan's a Fucking Dewott")))
                 {
-                    if (!Client.GetGuild(329174505371074560).TextChannels.Select(e => e.Name).Contains(Path.GetFileNameWithoutExtension(file)))
+                    if (!Client.GetGuild(329174505371074560).TextChannels.Select(e => e.Id.ToString()).Contains(Path.GetFileNameWithoutExtension(file)))
                     {
                         File.Delete(file);
                     }
@@ -117,444 +110,36 @@ namespace CSharpDewott
 
                 foreach (SocketTextChannel socketGuildChannel in Client.GetGuild(329174505371074560).TextChannels)
                 {
-                    FileHelper.CreateIfDoesNotExist(AppPath, "Logs", Client.GetGuild(329174505371074560).Name, new string(socketGuildChannel.Name.ToCharArray().Where(e => !Path.GetInvalidFileNameChars().Contains(e)).ToArray()) + ".xml");
+                    FileHelper.CreateIfDoesNotExist(AppPath, "Logs", Client.GetGuild(329174505371074560).Name, new string(socketGuildChannel.Id.ToString().ToCharArray().Where(e => !Path.GetInvalidFileNameChars().Contains(e)).ToArray()) + ".json");
 
                     List<IReadOnlyCollection<IMessage>> messagesList = await socketGuildChannel.GetMessagesAsync(int.MaxValue).ToList();
 
-                    List<DeserializedMessage> messages = new List<DeserializedMessage>();
+                    Dictionary<ulong, DeserializedMessage> messages = new Dictionary<ulong, DeserializedMessage>();
 
-                    foreach (IReadOnlyCollection<IMessage> readOnlyCollection in messagesList)
-                    {
-                        messages.AddRange(readOnlyCollection.Select(e => new DeserializedMessage(e.Id, e.IsTTS, e.IsPinned, e.Content, e.Timestamp, e.EditedTimestamp, e.CreatedAt, new DeserializableUser(e.Author.Id, e.Author.CreatedAt, e.Author.Mention, e.Author.AvatarId, e.Author.DiscriminatorValue, e.Author.Discriminator, e.Author.IsBot, e.Author.IsWebhook, e.Author.Username), new DeserializedChannel(e.Channel.Id, e.Channel.CreatedAt, e.Channel.Name, e.Channel.IsNsfw))));
-                    }
+                    messages = messagesList.Aggregate(messages, (current, readOnlyCollection) => current.AddRange(readOnlyCollection.Select(e => new DeserializedMessage(e.Id, e.IsTTS, e.IsPinned, e.Content, e.Timestamp, e.EditedTimestamp, e.CreatedAt, new DeserializableUser(e.Author.Id, e.Author.CreatedAt, e.Author.Mention, e.Author.AvatarId, e.Author.DiscriminatorValue, e.Author.Discriminator, e.Author.IsBot, e.Author.IsWebhook, e.Author.Username), new DeserializedChannel(e.Channel.Id, e.Channel.CreatedAt, e.Channel.Name, e.Channel.IsNsfw))).ToDictionary(e => e.Id)));
 
-                    File.WriteAllText(Path.Combine(AppPath, "Logs", Client.GetGuild(329174505371074560).Name, new string(socketGuildChannel.Name.ToCharArray().Where(e => !Path.GetInvalidFileNameChars().Contains(e)).ToArray()) + ".xml"), JsonConvert.SerializeObject(messages, Newtonsoft.Json.Formatting.Indented, new JsonSerializerSettings
+                    File.WriteAllText(Path.Combine(AppPath, "Logs", Client.GetGuild(329174505371074560).Name, new string(socketGuildChannel.Id.ToString().ToCharArray().Where(e => !Path.GetInvalidFileNameChars().Contains(e)).ToArray()) + ".json"), JsonConvert.SerializeObject(messages, Newtonsoft.Json.Formatting.Indented, new JsonSerializerSettings
                     {
                         PreserveReferencesHandling = PreserveReferencesHandling.Objects,
                         ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
                         TypeNameHandling = TypeNameHandling.Auto
                     }));
                 }
-
-                await Client.SetGameAsync(".help");
             }
             catch (Exception e)
             {
                 Console.WriteLine(e);
             }
-        }
-
-        public async Task InstallCommands()
-        {
-            // Hook the MessageReceived Event into our Command Handler
-            Client.MessageReceived += this.HandleCommand;
-            Client.MessageDeleted += this.Client_MessageDeleted;
-
-            // Discover all of the commands in this assembly and load them.
-            await this.commands.AddModulesAsync(Assembly.GetEntryAssembly());
-
-            Globals.CommandService = this.commands;
-        }
-
-        private async Task Client_MessageDeleted(Cacheable<IMessage, ulong> messageCache, ISocketMessageChannel deleteOriginChannel)
-        {
-            try
+            finally
             {
-                if (Client.GetGuild(329174505371074560).Channels.Any(e => e.Id == deleteOriginChannel.Id) && this.lastMessages.TryGetValue(messageCache.Value.Id, out SocketUserMessage matureMessage))
-                {
-                    SocketUser deleter = matureMessage.Author;
-                    IGuild deleteGuild = Client.GetGuild(329174505371074560);
-                    ITextChannel deleteInfoChannel = (ITextChannel)await deleteGuild.GetChannelAsync(335897510813892619);
-                    EmbedBuilder builder = new EmbedBuilder();
-                    builder.WithColor(Color.Red);
-                    builder.Author = new EmbedAuthorBuilder
-                    {
-                        Name = deleter.Username,
-                        IconUrl = deleter.GetAvatarUrl()
-                    };
-                    builder.Fields.Add(new EmbedFieldBuilder().WithName("Deleted message content:").WithValue(string.IsNullOrWhiteSpace(matureMessage.Content) ? "empty" : matureMessage.Content));
-                    builder.Fields.Add(new EmbedFieldBuilder().WithName("Time:").WithValue(matureMessage.Timestamp));
-
-                    if (matureMessage.Embeds.Count > 0)
-                    {
-                        builder.Footer = new EmbedFooterBuilder().WithText($"Contains {matureMessage.Embeds.Count} embed(s) that will be appended to the end of this message");
-                    }
-
-                    await deleteInfoChannel.SendMessageAsync(string.Empty, false, builder.Build());
-
-                    foreach (Embed matureMessageEmbed in matureMessage.Embeds)
-                    {
-                        await deleteInfoChannel.SendMessageAsync(string.Empty, false, matureMessageEmbed);
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e);
-            }
-        }
-
-        public async Task HandleCommand(SocketMessage msg)
-        {
-            SocketUserMessage message = msg as SocketUserMessage;
-
-            if (message == null || msg.Author.IsBot)
-            {
-                return;
-            }
-
-            if (this.lastMessages.Count == 100)
-            {
-                ulong keyToDelete = 0;
-
-                foreach (SocketUserMessage cachedMessage in this.lastMessages.Values)
-                {
-                    if (this.lastMessages.TryGetValue(keyToDelete, out SocketUserMessage mess))
-                    {
-                        if (cachedMessage.Timestamp.CompareTo(mess.Timestamp) < 0)
-                        {
-                            keyToDelete = cachedMessage.Id;
-                        }
-                    }
-                    else
-                    {
-                        keyToDelete = cachedMessage.Id;
-                    }
-                }
-
-                this.lastMessages.Remove(keyToDelete);
-            }
-
-            this.lastMessages.Add(message.Id, message);
-
-            // Add string testing after the argPos
-            int argPos = 0;
-
-            if (message.Content.StartsWith("*") & message.Content.EndsWith("*") || message.Content.StartsWith("_") & message.Content.EndsWith("_"))
-            {
-                string potentialRequest = message.Content.Replace("*", string.Empty).Replace("_", string.Empty).ToLower();
-
-                Image image = null;
-
-                if (HttpHelper.URLExists($"https://play.pokemonshowdown.com/sprites/xyani/{potentialRequest}.gif"))
-                {
-                    byte[] imageBytes = await this.HttpClient.GetByteArrayAsync($"https://play.pokemonshowdown.com/sprites/xyani/{potentialRequest}.gif");
-
-                    using (MemoryStream ms = new MemoryStream(imageBytes))
-                    {
-                        image = Image.FromStream(ms);
-                    }
-                }
-
-                if (image != null)
-                {
-                    if (File.Exists(Path.Combine(AppPath, "pokemon.gif")))
-                    {
-                        File.Delete(Path.Combine(AppPath, "pokemon.gif"));
-                    }
-
-                    image.Save(Path.Combine(AppPath, "pokemon.gif"));
-
-                    await message.Channel.SendFileAsync(Path.Combine(AppPath, "pokemon.gif"));
-                }
-            }
-
-            if (message.Content.StartsWith(".e6 set"))
-            {
-                try
-                {
-                    Directory.CreateDirectory(Path.Combine(AppPath, "e6options"));
-
-                    UserOptions options = new UserOptions
-                    {
-                        Id = message.Author.Id,
-                        DisplaySources = false,
-                        DisplayTags = false,
-                        DisplayId = false
-                    };
-
-                    if (File.Exists(Path.Combine(AppPath, "e6options", $"{message.Author.Id}.json")))
-                    {
-                        options = JsonConvert.DeserializeObject<UserOptions>(File.ReadAllText(Path.Combine(AppPath, "e6options", $"{message.Author.Id}.json")));
-                    }
-
-                    if (message.Content.Split(' ').Length < 4)
-                    {
-                        await message.Channel.SendMessageAsync("The command setup is `.e6 set [tags|sources] [true|false]`.\nBy default all options are false.");
-                        return;
-                    }
-
-                    switch (message.Content.ToLower().Split(' ')[2])
-                    {
-                        case "tags":
-                        case "tag":
-                            {
-                                if (bool.TryParse(message.Content.Split(' ')[3], out bool result))
-                                {
-                                    options.DisplayTags = result;
-                                }
-                                else
-                                {
-                                    await message.Channel.SendMessageAsync("Option \"Tags\" requires either true or false as the value");
-                                    return;
-                                }
-                            }
-                            break;
-                        case "source":
-                        case "sources":
-                            {
-                                if (bool.TryParse(message.Content.Split(' ')[3], out bool result))
-                                {
-                                    options.DisplaySources = result;
-                                }
-                                else
-                                {
-                                    await message.Channel.SendMessageAsync("Option \"Sources\" requires either true or false as the value");
-                                    return;
-                                }
-                            }
-                            break;
-                        default:
-                            {
-                                await message.Channel.SendMessageAsync("The command setup is `.e6 set [tags|sources|Id] [true|false]`.\nBy default all options are false.");
-                                return;
-                            }
-                    }
-
-                    File.WriteAllText(Path.Combine(AppPath, "e6options", $"{message.Author.Id}.json"), JsonConvert.SerializeObject(options));
-
-                    await message.Channel.SendMessageAsync("Option set succussfully!");
-
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine(e);
-                }
-
-                return;
-            }
-
-            if (message.Content.StartsWith(".numbergame stop") && PlayingUser.Id == message.Author.Id)
-            {
-                await message.Channel.SendMessageAsync("Number Game cancelled");
-
-                CurrentLevel = 0;
-                CorrectNumber = 0;
-                this.currentGuesses = 0;
-                IsNumberGameRunning = false;
-                PlayingUser = null;
-                return;
-            }
-
-            if (message.Content.StartsWith(".numbergame records"))
-            {
-                List<NGRecords> allRecords = Directory.GetFiles(Path.Combine(AppPath, "numbergame")).Select(file => JsonConvert.DeserializeObject<NGRecords>(File.ReadAllText(file))).ToList();
-
-                EmbedBuilder builder = new EmbedBuilder
-                {
-                    Title = "Number Game Records"
-                };
-
-                builder.WithColor(Color.Gold);
-
-                foreach (NGRecords ngRecords in allRecords)
-                {
-                    switch (ngRecords.Difficulty)
-                    {
-                        case 1:
-                            {
-                                builder.Fields.Add(new EmbedFieldBuilder
-                                {
-                                    IsInline = false,
-                                    Name = "Easy",
-                                    Value = (await ((ITextChannel)message.Channel).Guild.GetUserAsync(ngRecords.Id)).Username + $" : {ngRecords.Guesses}"
-                                });
-                            }
-                            break;
-                        case 2:
-                            {
-                                builder.Fields.Add(new EmbedFieldBuilder
-                                {
-                                    IsInline = false,
-                                    Name = "Medium",
-                                    Value = (await ((ITextChannel)message.Channel).Guild.GetUserAsync(ngRecords.Id)).Username + $" : {ngRecords.Guesses}"
-                                });
-                            }
-                            break;
-                        case 3:
-                            {
-                                builder.Fields.Add(new EmbedFieldBuilder
-                                {
-                                    IsInline = false,
-                                    Name = "Hard",
-                                    Value = (await ((ITextChannel)message.Channel).Guild.GetUserAsync(ngRecords.Id)).Username + $" : {ngRecords.Guesses}"
-                                });
-                            }
-                            break;
-                        case 4:
-                            {
-                                builder.Fields.Add(new EmbedFieldBuilder
-                                {
-                                    IsInline = false,
-                                    Name = "Extreme",
-                                    Value = (await ((ITextChannel)message.Channel).Guild.GetUserAsync(ngRecords.Id)).Username + $" : {ngRecords.Guesses}"
-                                });
-                            }
-                            break;
-                    }
-                }
-
-                await message.Channel.SendMessageAsync("<:PogChamp:335551145441492996>", false, builder.Build());
-
-                return;
-            }
-
-            if (message.HasCharPrefix('.', ref argPos))
-            {
-                // Create a Command Context
-                CommandContext context = new CommandContext(Client, message);
-
-                string commandName = message.Content.Substring(1).Split(' ')[0].Trim();
-
-                if (!AdminPrecondition.Whitelist.Contains(message.Author.Id) && !message.Author.IsBot)
-                {
-
-                    if (File.Exists(Path.Combine(Program.AppPath, "blacklists", $"{commandName}.txt")))
-                    {
-                        if (File.ReadAllLines(Path.Combine(Program.AppPath, "blacklists", $"{commandName}.txt")).Any(e => e.Contains(message.Channel.Id.ToString())))
-                        {
-                            await message.Channel.SendMessageAsync("This command has been blacklisted from this channel");
-                            return;
-                        }
-                    }
-
-                    if (File.ReadAllLines(Path.Combine(Program.AppPath, "blacklists", "all.txt")).Any(e => e.Contains(message.Channel.Id.ToString())))
-                    {
-                        await message.Channel.SendMessageAsync("All commands have been blacklisted from this channel");
-                        return;
-                    }
-                }
-
-                // Execute the command. (result does not indicate a return value,
-                // rather an object stating if the command executed succesfully)
-                IResult result = await this.commands.ExecuteAsync(context, argPos);
-                if (!result.IsSuccess)
-                {
-                    if (result.Error != CommandError.UnknownCommand)
-                    {
-                        await message.Channel.SendMessageAsync($"{result.ErrorReason}");
-                    }
-
-                    Console.Out.WriteLine($"[HandleCommand] {result.ErrorReason}");
-                }
-
-                return;
-            }
-
-            int luckyNumber = Globals.Random.Next(0, 1000);
-
-            if (luckyNumber == 166)
-            {
-                await message.Channel.SendMessageAsync("This feels gay");
-            }
-
-            if (IsNumberGameRunning && msg.Author.Id == PlayingUser.Id &&
-                msg.Channel.Name.ToLower().Contains("bot"))
-            {
-                if (int.TryParse(msg.Content, out int guess))
-                {
-                    if (guess > CorrectNumber)
-                    {
-                        this.currentGuesses++;
-                        await msg.Channel.SendMessageAsync($"Too high! You have guessed {this.currentGuesses} times.");
-                    }
-
-                    if (guess < CorrectNumber)
-                    {
-                        this.currentGuesses++;
-                        await msg.Channel.SendMessageAsync($"Too low! You have guessed {this.currentGuesses} times.");
-                    }
-
-                    if (guess == CorrectNumber)
-                    {
-                        this.currentGuesses++;
-                        await msg.Channel.SendMessageAsync(
-                            $"Congrats! You have guessed {this.currentGuesses} times to get the correct number, {CorrectNumber}.");
-
-                        if (!File.Exists(Path.Combine(AppPath, "numbergame", $"record{CurrentLevel}.json")))
-                        {
-                            FileHelper.CreateIfDoesNotExist(AppPath, "numbergame", $"record{CurrentLevel}.json");
-
-                            NGRecords records = new NGRecords
-                            {
-                                Difficulty = CurrentLevel,
-                                Guesses = this.currentGuesses,
-                                Id = message.Author.Id
-                            };
-
-                            string json = JsonConvert.SerializeObject(records);
-
-                            File.WriteAllText(Path.Combine(AppPath, "numbergame", $"record{CurrentLevel}.json"), json);
-                        }
-                        else
-                        {
-                            NGRecords records = new NGRecords
-                            {
-                                Difficulty = CurrentLevel,
-                                Guesses = this.currentGuesses,
-                                Id = message.Author.Id
-                            };
-
-                            NGRecords oldRecords = JsonConvert.DeserializeObject<NGRecords>(File.ReadAllText(Path.Combine(AppPath, "numbergame", $"record{CurrentLevel}.json")));
-
-                            if (oldRecords.Guesses > this.currentGuesses)
-                            {
-                                string json = JsonConvert.SerializeObject(records);
-
-                                File.WriteAllText(Path.Combine(AppPath, "numbergame", $"record{CurrentLevel}.json"), json);
-                            }
-                        }
-
-                        NGRecords newestRecords = JsonConvert.DeserializeObject<NGRecords>(File.ReadAllText(Path.Combine(AppPath, "numbergame", $"record{CurrentLevel}.json")));
-
-                        await msg.Channel.SendMessageAsync($"The current record is {newestRecords.Guesses}, set by {((ITextChannel)message.Channel).Guild.GetUserAsync(newestRecords.Id).Result.Username}");
-
-                        CurrentLevel = 0;
-                        CorrectNumber = 0;
-                        this.currentGuesses = 0;
-                        IsNumberGameRunning = false;
-                        PlayingUser = null;
-                    }
-                }
-            }
-
-            if (msg.Content.ToLower().Contains("hello") && msg.Content.ToLower().Contains("csharpdewott"))
-            {
-                await msg.Channel.SendMessageAsync($"Hello {msg.Author.Username}!");
-            }
-
-            if (msg.Content.Contains("(╯°□°）╯︵ ┻━┻"))
-            {
-                await msg.Channel.SendMessageAsync("┬─┬﻿ ノ( ゜-゜ノ)");
-            }
-
-            if (msg.Content.Contains("┬─┬﻿ ノ( ゜-゜ノ)"))
-            {
-                await msg.Channel.SendMessageAsync("https://youtu.be/To6nhootM3w");
-            }
-
-            if (msg.Content.ToLower().Contains("no u") && Globals.Random.NextDouble() < 0.3)
-            {
-                await msg.Channel.SendMessageAsync("no u");
+#if DEBUG
+                await Client.SetGameAsync("DEBUG MODE");
+#else
+                await Client.SetGameAsync("this feels gay");
+#endif
             }
         }
 
         private static void Main(string[] args) => new Program().MainAsync().GetAwaiter().GetResult();
-
-        private static Task Log(LogMessage msg)
-        {
-            Console.WriteLine(msg.ToString());
-            return Task.CompletedTask;
-        }
     }
 }

@@ -261,15 +261,18 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Commands\CommandHandler.cs" />
     <Compile Include="Commands\Commands.cs" />
     <Compile Include="Commands\PokemonCommands.cs" />
     <Compile Include="Constants.cs" />
+    <Compile Include="Deserialization\Converters\AccuracyConverter.cs" />
     <Compile Include="Deserialization\Converters\BoolConverter.cs" />
     <Compile Include="Deserialization\DeserializableUser.cs" />
     <Compile Include="Deserialization\DeserializedChannel.cs" />
     <Compile Include="Deserialization\DeserializedMessage.cs" />
     <Compile Include="Extensions\ConsoleHelper.cs" />
     <Compile Include="ESixOptions\UserOptions.cs" />
+    <Compile Include="Extensions\DictionaryExtension.cs" />
     <Compile Include="Extensions\HttpHelper.cs" />
     <Compile Include="Extensions\StringExtension.cs" />
     <Compile Include="Extensions\SystemColorToDiscord.cs" />
@@ -278,12 +281,14 @@
     <Compile Include="Globals.cs" />
     <Compile Include="IO\FileHelper.cs" />
     <Compile Include="IO\PathsHelper.cs" />
+    <Compile Include="Logging\LogHandler.cs" />
     <Compile Include="Music\TrackList.cs" />
     <Compile Include="Music\TrackListEntry.cs" />
-    <Compile Include="PokémonInfo\Items\FlagAttribute.cs" />
+    <Compile Include="PokémonInfo\Moves\FlagAttribute.cs" />
     <Compile Include="PokémonInfo\Items\Item.cs" />
     <Compile Include="PokémonInfo\Items\ItemHelper.cs" />
     <Compile Include="PokémonInfo\Moves\Move.cs" />
+    <Compile Include="PokémonInfo\Moves\MoveHelper.cs" />
     <Compile Include="PokémonInfo\Pokémon\Pokemon.cs" />
     <Compile Include="PokémonInfo\Pokémon\PokéDex.cs" />
     <Compile Include="PokémonInfo\Pokémon\PokémonInitialization.cs" />
@@ -298,7 +303,9 @@
     <Compile Include="Scraping\ItemInfo.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Data\moves.json" />
+    <None Include="Data\moves.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Include="Resources\Items.png" />
     <None Include="App.config">
       <SubType>Designer</SubType>
@@ -309,6 +316,7 @@
     </None>
     <Content Include="config.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <SubType>Designer</SubType>
     </Content>
     <Content Include="Markovs\lewdmarkov.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -368,7 +376,9 @@
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>
     </EmbeddedResource>
   </ItemGroup>
-  <ItemGroup />
+  <ItemGroup>
+    <Folder Include="Encryption\" />
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>

@@ -21,6 +21,7 @@ using CSharpDewott.GameInfo;
 using CSharpDewott.IO;
 using CSharpDewott.Music;
 using CSharpDewott.PokémonInfo.Items;
+using CSharpDewott.PokémonInfo.Moves;
 using CSharpDewott.PokémonInfo.Pokémon;
 using CSharpDewott.Preconditions;
 using CSharpDewott.Properties;
@@ -266,8 +267,10 @@ namespace CSharpDewott.Commands
         public async Task Poll(
             int time,
             [Summary("Title to display for the poll.")]
-            string title)
+            params string[] titleStrings)
         {
+            string title = string.Join(" ", titleStrings);
+
             IUserMessage message = await this.ReplyAsync($"Vote on {this.Context.User.Username}'s poll with reactions\n**{title}**\nYou have {time} seconds to vote.");
             
             await message.AddReactionAsync(new Emoji("👍"));
@@ -299,7 +302,7 @@ namespace CSharpDewott.Commands
         {
             try
             {
-                await Program.Instance.Client_Ready();
+                await Program.Client_Ready();
             }
             catch (Exception e)
             {
@@ -416,11 +419,11 @@ namespace CSharpDewott.Commands
                 user = this.Context.User;
             }
 
-            List<DeserializedMessage> allCachedMessages = new List<DeserializedMessage>();
+            Dictionary<ulong, DeserializedMessage> allCachedMessages = new Dictionary<ulong, DeserializedMessage>();
 
             foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)).Where(e => !File.ReadAllLines(Path.Combine(Program.AppPath, "markov-blacklists", "blacklists.txt")).Any(e.Contains)))
             {
-                allCachedMessages.AddRange(JsonConvert.DeserializeObject<List<DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
+                allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
                 {
                     PreserveReferencesHandling = PreserveReferencesHandling.Objects,
                     ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
@@ -428,7 +431,7 @@ namespace CSharpDewott.Commands
                 }));
             }
 
-            File.WriteAllLines(Path.Combine(Program.AppPath, "wordcloudinput.txt"), allCachedMessages.Where(e => e.Author.Id == user.Id).Select(e => e.Content));
+            File.WriteAllLines(Path.Combine(Program.AppPath, "wordcloudinput.txt"), allCachedMessages.Values.Where(e => e.Author.Id == user.Id).Select(e => e.Content));
 
             ProcessStartInfo info = new ProcessStartInfo
             {
@@ -491,8 +494,31 @@ namespace CSharpDewott.Commands
             await this.StopTyping();
 
             Stopwatch e6Stopwatch = null;
+            
+            UserOptions options;
 
-            if (!this.Context.Channel.Name.ToLower().Contains("bot"))
+            if (!File.Exists(Path.Combine(Program.AppPath, "e6options", $"{this.Context.User.Id}.json")))
+            {
+                options = new UserOptions
+                {
+                    Id = this.Context.User.Id,
+                    DisplaySources = false,
+                    DisplayTags = false,
+                    BlackList = new List<string>
+                    {
+                        "scat",
+                        "gore"
+                    }
+                };
+
+                File.WriteAllText(Path.Combine(Program.AppPath, "e6options", $"{this.Context.User.Id}.json"), JsonConvert.SerializeObject(options));
+            }
+            else
+            {
+                options = JsonConvert.DeserializeObject<UserOptions>(File.ReadAllText(Path.Combine(Program.AppPath, "e6options", $"{this.Context.User.Id}.json")));
+            }
+
+            if (!this.Context.Channel.Name.ToLower().Contains("bot") && !(this.Context.Channel is IDMChannel) && !(this.Context.Channel is SocketDMChannel) && this.Context.Channel.Id != 344718149398036490)
             {
 
                 if (e6Stopwatches.TryGetValue(this.Context.Channel.Id, out e6Stopwatch) && e6Stopwatch.IsRunning && e6Stopwatch.ElapsedMilliseconds < 200000)
@@ -521,7 +547,7 @@ namespace CSharpDewott.Commands
             {
                 if (int.TryParse(forcedTag, out int result))
                 {
-                    if (this.Context.Channel.Name.ToLower().Contains("bot"))
+                    if (this.Context.Channel.Name.ToLower().Contains("bot") || this.Context.Channel.Id == 344718149398036490)
                     {
                         requestedNumber = result <= 5 ? result : 5;
                     }
@@ -578,16 +604,49 @@ namespace CSharpDewott.Commands
 
                 filteredImages.RemoveAll(e =>
                 {
-                    if (!this.Context.Channel.IsNsfw && ((JObject)e).TryGetValue("rating", StringComparison.CurrentCultureIgnoreCase, out JToken resultJToken))
+                    bool shouldDelete = false;
+
+                    if (!this.Context.Channel.IsNsfw && !(this.Context.Channel is IDMChannel) && !(this.Context.Channel is SocketDMChannel) && ((JObject)e).TryGetValue("rating", StringComparison.CurrentCultureIgnoreCase, out JToken resultJToken))
                     {
-                        return resultJToken.ToObject<string>() != "s";
+                        shouldDelete = resultJToken.ToObject<string>() != "s";
+                    }
+
+                    if (shouldDelete)
+                    {
+                        return true;
                     }
 
                     if (((JObject)e).TryGetValue("file_ext", StringComparison.CurrentCultureIgnoreCase, out JToken resultFileType))
                     {
                         string extension = resultFileType.ToObject<string>();
 
-                        return extension != "png" && extension != "jpg" && extension != "jpeg" && extension != "gif";
+                        shouldDelete = extension != "png" && extension != "jpg" && extension != "jpeg" && extension != "gif";
+                    }
+                    
+                    if (shouldDelete)
+                    {
+                        return true;
+                    }
+
+                    if (((JObject)e).TryGetValue("tags", StringComparison.CurrentCultureIgnoreCase, out JToken resultTagTokens))
+                    {
+                        if (resultTagTokens.ToObject<string>().Split(' ').Any(f => options.BlackList.Select(g => g.ToLower()).Contains(f.ToLower())))
+                        {
+                            return true;
+                        }
+
+                        if (exceededTags != null)
+                        {
+                            foreach (string exceededTag in exceededTags)
+                            {
+                                if (!exceededTag.StartsWith("-"))
+                                {
+                                    continue;
+                                }
+
+                                return resultTagTokens.ToObject<string>().Split(' ').Any(f => string.Equals(f, exceededTag.TrimStart('-'), StringComparison.CurrentCultureIgnoreCase));
+                            }
+                        }
                     }
 
                     if (exceededTags != null && ((JObject)e).TryGetValue("tags", StringComparison.CurrentCultureIgnoreCase, out JToken resultTagToken))
@@ -595,7 +654,7 @@ namespace CSharpDewott.Commands
                         return exceededTags.Any(exceededTag => !resultTagToken.ToObject<string>().Split(' ').Any(f => string.Equals(f, exceededTag, StringComparison.CurrentCultureIgnoreCase)));
                     }
 
-                    return true;
+                    return false;
                 });
 
                 images = new JArray(filteredImages.ToList());
@@ -609,7 +668,7 @@ namespace CSharpDewott.Commands
 
                 if (getNumberOfImages)
                 {
-                    await this.ReplyAsync($"Counted {images.Count} images. Please note that this command enforces a limit of 640 posts.");
+                    await this.ReplyAsync($"Counted {images.Count} images. Please note that this command enforces a limit of 640 posts, which is then filtered to remove blacklist items and unsupported filetypes.");
                     return;
                 }
 
@@ -663,24 +722,6 @@ namespace CSharpDewott.Commands
                                 await this.E6Task(tags);
                                 return;
                             }
-                    }
-
-                    UserOptions options;
-
-                    if (!File.Exists(Path.Combine(Program.AppPath, "e6options", $"{this.Context.User.Id}.json")))
-                    {
-                        options = new UserOptions
-                        {
-                            Id = this.Context.User.Id,
-                            DisplaySources = false,
-                            DisplayTags = false
-                        };
-
-                        File.WriteAllText(Path.Combine(Program.AppPath, "e6options", $"{this.Context.User.Id}.json"), JsonConvert.SerializeObject(options));
-                    }
-                    else
-                    {
-                        options = JsonConvert.DeserializeObject<UserOptions>(File.ReadAllText(Path.Combine(Program.AppPath, "e6options", $"{this.Context.User.Id}.json")));
                     }
 
                     //                    using (MemoryStream stream = new MemoryStream(await Program.Instance.HttpClient.GetByteArrayAsync(url)))
@@ -845,13 +886,13 @@ namespace CSharpDewott.Commands
             {
                 Stopwatch markovstopwatch = null;
 
-                if (this.Context.Channel.Id != 329320797774675971 && markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovstopwatch) && markovstopwatch.IsRunning && markovstopwatch.ElapsedMilliseconds < 60000)
+                if (!this.Context.Channel.Name.Contains("bot") && markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovstopwatch) && markovstopwatch.IsRunning && markovstopwatch.ElapsedMilliseconds < 60000)
                 {
                     await this.ReplyAsync($"Please wait {60 - markovstopwatch.Elapsed.Seconds} seconds until using this command.");
                     return;
                 }
 
-                if (!markovStopwatches.ContainsKey(this.Context.Channel.Id) && this.Context.Channel.Id != 329320797774675971)
+                if (!markovStopwatches.ContainsKey(this.Context.Channel.Id) && !this.Context.Channel.Name.Contains("bot"))
                 {
                     markovStopwatches.Add(this.Context.Channel.Id, new Stopwatch());
 
@@ -914,13 +955,13 @@ namespace CSharpDewott.Commands
             {
                 Stopwatch markovStopwatch = null;
 
-                if (this.Context.Channel.Id != 329320797774675971 && markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch) && markovStopwatch.IsRunning && markovStopwatch.ElapsedMilliseconds < 60000)
+                if (!this.Context.Channel.Name.Contains("bot") && markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch) && markovStopwatch.IsRunning && markovStopwatch.ElapsedMilliseconds < 60000)
                 {
                     await this.ReplyAsync($"Please wait {60 - markovStopwatch.Elapsed.Seconds} seconds until using this command.");
                     return;
                 }
 
-                if (!markovStopwatches.ContainsKey(this.Context.Channel.Id) && this.Context.Channel.Id != 329320797774675971)
+                if (!markovStopwatches.ContainsKey(this.Context.Channel.Id) && !this.Context.Channel.Name.Contains("bot"))
                 {
                     markovStopwatches.Add(this.Context.Channel.Id, new Stopwatch());
 
@@ -983,13 +1024,13 @@ namespace CSharpDewott.Commands
             {
                 Stopwatch markovStopwatch = null;
 
-                if (this.Context.Channel.Id != 329320797774675971 && markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch) && markovStopwatch.IsRunning && markovStopwatch.ElapsedMilliseconds < 60000)
+                if (!this.Context.Channel.Name.Contains("bot") && markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch) && markovStopwatch.IsRunning && markovStopwatch.ElapsedMilliseconds < 60000)
                 {
                     await this.ReplyAsync($"Please wait {60 - markovStopwatch.Elapsed.Seconds} seconds until using this command.");
                     return;
                 }
 
-                if (!markovStopwatches.ContainsKey(this.Context.Channel.Id) && this.Context.Channel.Id != 329320797774675971)
+                if (!markovStopwatches.ContainsKey(this.Context.Channel.Id) && !this.Context.Channel.Name.Contains("bot"))
                 {
                     markovStopwatches.Add(this.Context.Channel.Id, new Stopwatch());
 
@@ -1001,11 +1042,11 @@ namespace CSharpDewott.Commands
                     return;
                 }
 
-                List<DeserializedMessage> allCachedMessages = new List<DeserializedMessage>();
+                Dictionary<ulong, DeserializedMessage> allCachedMessages = new Dictionary<ulong, DeserializedMessage>();
 
                 foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)).Where(e => !File.ReadAllLines(Path.Combine(Program.AppPath, "markov-blacklists", $"blacklists.txt")).Any(e.Contains)))
                 {
-                    allCachedMessages.AddRange(JsonConvert.DeserializeObject<List<DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
+                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
                     {
                         PreserveReferencesHandling = PreserveReferencesHandling.Objects,
                         ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
@@ -1013,7 +1054,7 @@ namespace CSharpDewott.Commands
                     }));
                 }
 
-                File.WriteAllLines(Path.Combine(Program.AppPath, "Markovs", "currentuser.txt"), allCachedMessages.Select(e => e.Content));
+                File.WriteAllLines(Path.Combine(Program.AppPath, "Markovs", "currentuser.txt"), allCachedMessages.Values.Select(e => e.Content));
 
                 File.WriteAllText(Path.Combine(Program.AppPath, "Markovs", "fileLoc.txt"), "currentuser.txt");
 
@@ -1069,21 +1110,21 @@ namespace CSharpDewott.Commands
             }
         }
 
-        [Command("usermarkov")]
+        [Command("uwusermarkov")]
         [Summary("Creates a sentence using https://github.com/jsvine/markovify/ from sentences you've said before.")]
-        public async Task UserMarkov(IUser user = null)
+        public async Task UwuserMarkov(IUser user = null)
         {
             try
             {
                 Stopwatch markovStopwatch = null;
 
-                if (this.Context.Channel.Id != 329320797774675971 && markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch) && markovStopwatch.IsRunning && markovStopwatch.ElapsedMilliseconds < 60000)
+                if (!this.Context.Channel.Name.Contains("bot") && markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch) && markovStopwatch.IsRunning && markovStopwatch.ElapsedMilliseconds < 60000)
                 {
                     await this.ReplyAsync($"Please wait {60 - markovStopwatch.Elapsed.Seconds} seconds until using this command.");
                     return;
                 }
 
-                if (!markovStopwatches.ContainsKey(this.Context.Channel.Id) && this.Context.Channel.Id != 329320797774675971)
+                if (!markovStopwatches.ContainsKey(this.Context.Channel.Id) && !this.Context.Channel.Name.Contains("bot"))
                 {
                     markovStopwatches.Add(this.Context.Channel.Id, new Stopwatch());
 
@@ -1100,11 +1141,11 @@ namespace CSharpDewott.Commands
                     return;
                 }
 
-                List<DeserializedMessage> allCachedMessages = new List<DeserializedMessage>();
+                Dictionary<ulong, DeserializedMessage> allCachedMessages = new Dictionary<ulong, DeserializedMessage>();
 
                 foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)).Where(e => !File.ReadAllLines(Path.Combine(Program.AppPath, "markov-blacklists", $"blacklists.txt")).Any(e.Contains)))
                 {
-                    allCachedMessages.AddRange(JsonConvert.DeserializeObject<List<DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
+                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
                     {
                         PreserveReferencesHandling = PreserveReferencesHandling.Objects,
                         ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
@@ -1112,9 +1153,9 @@ namespace CSharpDewott.Commands
                     }));
                 }
 
-                allCachedMessages = allCachedMessages.Where(e => e.Author.Id == user.Id).ToList();
+                allCachedMessages = allCachedMessages.Where(e => e.Value.Author.Id == user.Id).ToDictionary(e => e.Key, e => e.Value);
 
-                File.WriteAllLines(Path.Combine(Program.AppPath, "Markovs", "currentuser.txt"), allCachedMessages.Select(e => e.Content));
+                File.WriteAllLines(Path.Combine(Program.AppPath, "Markovs", "currentuser.txt"), allCachedMessages.Values.Select(e => e.Content));
 
                 File.WriteAllText(Path.Combine(Program.AppPath, "Markovs", "fileLoc.txt"), "currentuser.txt");
 
@@ -1146,7 +1187,108 @@ namespace CSharpDewott.Commands
                     {
                         IGuildUser founduser = this.Context.Guild.GetUserAsync(Convert.ToUInt64(e.Value.Replace("@", string.Empty).Replace("!", string.Empty).Replace(">", string.Empty).Replace("<", string.Empty))).Result;
 
-                        return string.IsNullOrWhiteSpace(founduser.Nickname) ? founduser.Username : founduser.Nickname;
+                        return string.IsNullOrWhiteSpace(founduser.Nickname) ? $"[{founduser.Username}]" : $"[{founduser.Nickname}]";
+                    }).Replace("u", "uwu"));
+
+                    markovStopwatch?.Restart();
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+
+                if (!File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")) || string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt"))))
+                {
+                    await this.ReplyAsync("Markov creation failed!");
+                }
+            }
+            finally
+            {
+                if (File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")))
+                {
+                    File.Delete(Path.Combine(Program.AppPath, "Markovs", "output.txt"));
+                }
+            }
+        }
+
+        [Command("usermarkov")]
+        [Summary("Creates a sentence using https://github.com/jsvine/markovify/ from sentences you've said before.")]
+        public async Task UserMarkov(IUser user = null)
+        {
+            try
+            {
+                Stopwatch markovStopwatch = null;
+
+                if (!this.Context.Channel.Name.Contains("bot") && markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch) && markovStopwatch.IsRunning && markovStopwatch.ElapsedMilliseconds < 60000)
+                {
+                    await this.ReplyAsync($"Please wait {60 - markovStopwatch.Elapsed.Seconds} seconds until using this command.");
+                    return;
+                }
+
+                if (!markovStopwatches.ContainsKey(this.Context.Channel.Id) && !this.Context.Channel.Name.Contains("bot"))
+                {
+                    markovStopwatches.Add(this.Context.Channel.Id, new Stopwatch());
+
+                    markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch);
+                }
+
+                if (user == null)
+                {
+                    user = this.Context.User;
+                }
+
+                if (!Directory.Exists(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)))
+                {
+                    return;
+                }
+
+                Dictionary<ulong, DeserializedMessage> allCachedMessages = new Dictionary<ulong, DeserializedMessage>();
+
+                foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)).Where(e => !File.ReadAllLines(Path.Combine(Program.AppPath, "markov-blacklists", $"blacklists.txt")).Any(e.Contains)))
+                {
+                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
+                    {
+                        PreserveReferencesHandling = PreserveReferencesHandling.Objects,
+                        ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+                        TypeNameHandling = TypeNameHandling.Auto
+                    }));
+                }
+
+                allCachedMessages = allCachedMessages.Where(e => e.Value.Author.Id == user.Id).ToDictionary(e => e.Key, e => e.Value);
+
+                File.WriteAllLines(Path.Combine(Program.AppPath, "Markovs", "currentuser.txt"), allCachedMessages.Values.Select(e => e.Content));
+
+                File.WriteAllText(Path.Combine(Program.AppPath, "Markovs", "fileLoc.txt"), "currentuser.txt");
+
+                ProcessStartInfo info = new ProcessStartInfo
+                {
+                    FileName = "py",
+                    Arguments = $"-3 \"{Path.Combine(Program.AppPath, "Markovs", "markovNewline.py")}\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true
+                };
+
+                Process markovProcess = Process.Start(info);
+
+                string output = markovProcess?.StandardOutput.ReadToEnd();
+
+                Console.Out.WriteLine($"[python-output@{DateTime.Now.ToLongTimeString()}]: {output}");
+
+                while (!File.Exists(Path.Combine(Program.AppPath, "Markovs", "output.txt")))
+                {
+                }
+
+                if (string.IsNullOrWhiteSpace(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt"))))
+                {
+                    await this.ReplyAsync("Markov creation failed!");
+                }
+                else
+                {
+                    await this.ReplyAsync(Regex.Replace(File.ReadAllText(Path.Combine(Program.AppPath, "Markovs", "output.txt")), @"<@[^\s]*([0-9]+)>", e =>
+                    {
+                        IGuildUser founduser = this.Context.Guild.GetUserAsync(Convert.ToUInt64(e.Value.Replace("@", string.Empty).Replace("!", string.Empty).Replace(">", string.Empty).Replace("<", string.Empty))).Result;
+
+                        return string.IsNullOrWhiteSpace(founduser.Nickname) ? $"[{founduser.Username}]" : $"[{founduser.Nickname}]";
                     }));
 
                     markovStopwatch?.Restart();
@@ -1181,13 +1323,13 @@ namespace CSharpDewott.Commands
 
                 Stopwatch markovStopwatch = null;
 
-                if (this.Context.Channel.Id != 329320797774675971 && markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch) && markovStopwatch.IsRunning && markovStopwatch.ElapsedMilliseconds < 60000)
+                if (!this.Context.Channel.Name.Contains("bot") && markovStopwatches.TryGetValue(this.Context.Channel.Id, out markovStopwatch) && markovStopwatch.IsRunning && markovStopwatch.ElapsedMilliseconds < 60000)
                 {
                     await this.ReplyAsync($"Please wait {60 - markovStopwatch.Elapsed.Seconds} seconds until using this command.");
                     return;
                 }
 
-                if (!markovStopwatches.ContainsKey(this.Context.Channel.Id) && this.Context.Channel.Id != 329320797774675971)
+                if (!markovStopwatches.ContainsKey(this.Context.Channel.Id) && !this.Context.Channel.Name.Contains("bot"))
                 {
                     markovStopwatches.Add(this.Context.Channel.Id, new Stopwatch());
 
@@ -1199,11 +1341,11 @@ namespace CSharpDewott.Commands
                     return;
                 }
 
-                List<DeserializedMessage> allCachedMessages = new List<DeserializedMessage>();
+                Dictionary<ulong, DeserializedMessage> allCachedMessages = new Dictionary<ulong, DeserializedMessage>();
 
                 foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)).Where(e => !File.ReadAllLines(Path.Combine(Program.AppPath, "markov-blacklists", $"blacklists.txt")).Any(e.Contains)))
                 {
-                    allCachedMessages.AddRange(JsonConvert.DeserializeObject<List<DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
+                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
                     {
                         PreserveReferencesHandling = PreserveReferencesHandling.Objects,
                         ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
@@ -1211,9 +1353,9 @@ namespace CSharpDewott.Commands
                     }));
                 }
 
-                allCachedMessages = allCachedMessages.Where(e => requestedUsersIds.Contains(e.Author.Id)).ToList();
+                allCachedMessages = allCachedMessages.Where(e => users.Any(f => f.Id == e.Value.Author.Id)).ToDictionary(e => e.Key, e => e.Value);
 
-                File.WriteAllLines(Path.Combine(Program.AppPath, "Markovs", "currentmulti.txt"), allCachedMessages.Select(e => e.Content));
+                File.WriteAllLines(Path.Combine(Program.AppPath, "Markovs", "currentmulti.txt"), allCachedMessages.Values.Select(e => e.Content));
 
                 File.WriteAllText(Path.Combine(Program.AppPath, "Markovs", "fileLoc.txt"), "currentmulti.txt");
 
@@ -1245,7 +1387,7 @@ namespace CSharpDewott.Commands
                     {
                         IGuildUser user = this.Context.Guild.GetUserAsync(Convert.ToUInt64(e.Value.Replace("@", string.Empty).Replace("!", string.Empty).Replace(">", string.Empty).Replace("<", string.Empty))).Result;
 
-                        return string.IsNullOrWhiteSpace(user.Nickname) ? user.Username : user.Nickname;
+                        return string.IsNullOrWhiteSpace(user.Nickname) ? $"[{user.Username}]" : $"[{user.Nickname}]";
                     }));
 
                     markovStopwatch?.Restart();
@@ -1521,46 +1663,69 @@ namespace CSharpDewott.Commands
                 .asJson<string>();
         }*/
 
-        /*[Command("setmature")]
-        public async Task Set18()
+        [Command("getfrisky")]
+        public async Task SetAdeventurer()
         {
-            IDMChannel dmChannel = await this.Context.User.GetOrCreateDMChannelAsync();
+            IGuild mainGuild = await this.Context.Client.GetGuildAsync(329174505371074560);
 
-            if (this.Context.Channel.Id != dmChannel.Id)
-            {
-                return;
-            }
-
-            IGuild pmdoPublic = await this.Context.Client.GetGuildAsync(280822504824766464);
-
-            if (pmdoPublic != null)
+            if (mainGuild != null)
             {
                 try
                 {
-                    if (await pmdoPublic.GetUserAsync(this.Context.User.Id) == null)
+                    if (await mainGuild.GetUserAsync(this.Context.User.Id) == null)
                     {
-                        await this.Context.Channel.SendMessageAsync("You are not in the PMDO public server!");
+                        await this.Context.Channel.SendMessageAsync("This bot has been moved to a private server. Sorry...");
                         return;
                     }
 
-                    if ((await pmdoPublic.GetUserAsync(this.Context.User.Id)).RoleIds.ToList().FindAll(e => e == 280889711546073088).Count > 0)
+                    if ((await mainGuild.GetUserAsync(this.Context.User.Id)).RoleIds.Any(e => e == 344712612560502796))
                     {
                         await this.Context.Channel.SendMessageAsync(
-                            "You have already been given the \"Mature\" role!");
+                            "You have already been given the \"Adventurous\" role!");
                         return;
                     }
 
-                    await (await pmdoPublic.GetUserAsync(this.Context.User.Id)).AddRoleAsync(pmdoPublic.GetRole(280889711546073088));
+                    await (await mainGuild.GetUserAsync(this.Context.User.Id)).AddRoleAsync(mainGuild.GetRole(344712612560502796));
                     await this.Context.Channel.SendMessageAsync(
-                        "You have been given the \"Mature\" role! Remember this is a priviledge, and can and will be revoked.");
+                        "You have been given the \"Adventurous\" role! Hmm wonder what it does 🤔");
                 }
                 catch (Exception ex)
                 {
-                    ConsoleHelper.WriteLine(ex.Message);
-                    await this.Context.Channel.SendMessageAsync("You are not in the PMDO public server!");
+                    ConsoleHelper.WriteLine(ex);
                 }
             }
-        }*/
+        }
+
+        [Command("getunfrisky")]
+        public async Task RemoveAdeventurer()
+        {
+            IGuild mainGuild = await this.Context.Client.GetGuildAsync(329174505371074560);
+
+            if (mainGuild != null)
+            {
+                try
+                {
+                    if (await mainGuild.GetUserAsync(this.Context.User.Id) == null)
+                    {
+                        await this.Context.Channel.SendMessageAsync("This bot has been moved to a private server. Sorry...");
+                        return;
+                    }
+
+                    if ((await mainGuild.GetUserAsync(this.Context.User.Id)).RoleIds.All(e => e != 344712612560502796))
+                    {
+                        await this.Context.Channel.SendMessageAsync("You do not have the \"Adventurous\" role!");
+                        return;
+                    }
+
+                    await (await mainGuild.GetUserAsync(this.Context.User.Id)).RemoveRoleAsync(mainGuild.GetRole(344712612560502796));
+                    await this.Context.Channel.SendMessageAsync("You no longer have the \"Adventurous\" role.");
+                }
+                catch (Exception ex)
+                {
+                    ConsoleHelper.WriteLine(ex);
+                }
+            }
+        }
 
         /*[Summary("Suggest something to the #suggestions channel!")]
         [Command("suggest")]
@@ -1596,7 +1761,7 @@ namespace CSharpDewott.Commands
 
             Image image = null;
 
-            if (HttpHelper.URLExists("https://play.pokemonshowdown.com/sprites/xyani/dewott.gif"))
+            if (HttpHelper.UrlExists("https://play.pokemonshowdown.com/sprites/xyani/dewott.gif"))
             {
                 byte[] imageBytes = await Program.Instance.HttpClient.GetByteArrayAsync("https://play.pokemonshowdown.com/sprites/xyani/dewott.gif");
 
@@ -1793,7 +1958,7 @@ namespace CSharpDewott.Commands
         {
             /*if (markovStopwatch.IsRunning)
             {
-                if (this.Context.Channel.Id != 329320797774675971 && markovStopwatch.ElapsedMilliseconds < 200000)
+                if (!this.Context.Channel.Name.Contains("bot") && markovStopwatch.ElapsedMilliseconds < 200000)
                 {
                     await this.ReplyAsync("*insert wait text here*");
 
@@ -2044,12 +2209,102 @@ namespace CSharpDewott.Commands
             }
         }
 
+        [Summary("Gets info about a requested move"), Command("move")]
+        public async Task Move(
+            [Summary("Move to search.")]
+            params string[] item)
+        {
+            string requestedMove = string.Join(" ", item);
+
+            if (MoveList.AllMoves == null)
+            {
+                MoveHelper.InitializeMoves();
+            }
+
+            if (MoveList.AllMoves == null)
+            {
+                return;
+            }
+
+            Move move = MoveList.AllMoves.FirstOrDefault(e => string.Equals(e.Id, requestedMove, StringComparison.CurrentCultureIgnoreCase) || string.Equals(e.Name, requestedMove, StringComparison.CurrentCultureIgnoreCase));
+
+            if (move == null)
+            {
+                await this.ReplyAsync("Move not found!");
+                return;
+            }
+
+            EmbedBuilder builder = new EmbedBuilder
+            {
+                Title = move.Name
+            };
+
+            builder.Fields.Add(new EmbedFieldBuilder
+            {
+                IsInline = true,
+                Name = "Description",
+                Value = move.Discription
+            });
+
+            builder.Fields.Add(new EmbedFieldBuilder
+            {
+                IsInline = true,
+                Name = "Accuracy",
+                Value = move.Accuracy == -1 ? "Never Misses" : $"{move.Accuracy}%"
+            });
+
+            builder.Fields.Add(new EmbedFieldBuilder
+            {
+                IsInline = true,
+                Name = "Base Power",
+                Value = move.BasePower
+            });
+
+            builder.Fields.Add(new EmbedFieldBuilder
+            {
+                IsInline = true,
+                Name = "PP",
+                Value = move.PP
+            });
+
+            builder.Fields.Add(new EmbedFieldBuilder
+            {
+                IsInline = true,
+                Name = "Category",
+                Value = Enum.GetName(typeof(Move.MoveCategory), move.Category)
+            });
+            
+            builder.Fields.Add(new EmbedFieldBuilder
+            {
+                IsInline = true,
+                Name = "Priority",
+                Value = move.Priority
+            });
+
+            if (move.ContestType != null)
+            {
+                builder.Fields.Add(new EmbedFieldBuilder
+                {
+                    IsInline = true,
+                    Name = "Contest Type",
+                    Value = move.ContestType
+                });
+            }
+
+            builder.Description = move.Flags.ToString();
+
+            builder.WithColor(move.TypeColor);
+
+            await this.ReplyAsync(string.Empty, false, builder.Build());
+        }
+
         [Summary("Gets item from multiple sources")]
         [Command("item")]
         public async Task Item(
             [Summary("Item to search. Must be in quotes")]
-            string item)
+            params string[] itemStrings)
         {
+            string item = string.Join(" ", itemStrings);
 
             if (ItemList.AllItems == null)
             {
@@ -2217,11 +2472,11 @@ namespace CSharpDewott.Commands
         [Command("stats"), Summary("Gets random info about the server."), Alias("stat", "serverinfo")]
         public async Task Stats()
         {
-            List<DeserializedMessage> allCachedMessages = new List<DeserializedMessage>();
+            Dictionary<ulong, DeserializedMessage> allCachedMessages = new Dictionary<ulong, DeserializedMessage>();
 
             foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)))
             {
-                allCachedMessages.AddRange(JsonConvert.DeserializeObject<List<DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
+                allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
                 {
                     PreserveReferencesHandling = PreserveReferencesHandling.Objects,
                     ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
@@ -2241,7 +2496,7 @@ namespace CSharpDewott.Commands
             {
                 if (DateTime.Now.Day - i > 0)
                 {
-                    messegesInAWeek.Add(allCachedMessages.Count(e => e.Timestamp.Day == DateTime.Now.Day - i && e.Timestamp.Month == DateTime.Now.Month));
+                    messegesInAWeek.Add(allCachedMessages.Values.Count(e => e.Timestamp.Day == DateTime.Now.Day - i && e.Timestamp.Month == DateTime.Now.Month));
                 }
                 else
                 {
@@ -2251,7 +2506,7 @@ namespace CSharpDewott.Commands
 
                     int day = DateTime.DaysInMonth(DateTime.Now.Year, month) - overflow;
 
-                    messegesInAWeek.Add(allCachedMessages.Count(e => e.Timestamp.Day == day && e.Timestamp.Month == month));
+                    messegesInAWeek.Add(allCachedMessages.Values.Count(e => e.Timestamp.Day == day && e.Timestamp.Month == month));
                 }
             }
 
@@ -2271,7 +2526,7 @@ namespace CSharpDewott.Commands
                 Value = allCachedMessages.Count
             });
 
-            Dictionary<ulong, int> userMessageCountDictionary = (await this.Context.Guild.GetUsersAsync()).ToDictionary(guildUser => guildUser.Id, guildUser => allCachedMessages.Count(e => e.Author.Id == guildUser.Id));
+            Dictionary<ulong, int> userMessageCountDictionary = (await this.Context.Guild.GetUsersAsync()).ToDictionary(guildUser => guildUser.Id, guildUser => allCachedMessages.Values.Count(e => e.Author.Id == guildUser.Id));
 
             builder.Fields.Add(new EmbedFieldBuilder
             {
@@ -2280,7 +2535,7 @@ namespace CSharpDewott.Commands
                 Value = (await this.Context.Guild.GetUserAsync(userMessageCountDictionary.Aggregate((l, r) => l.Value > r.Value ? l : r).Key)).Username
             });
 
-            Dictionary<ulong, int> channelMessageCountDictionary = (await this.Context.Guild.GetTextChannelsAsync()).ToDictionary(channel => channel.Id, channel => allCachedMessages.Count(e => e.Channel.Id == channel.Id));
+            Dictionary<ulong, int> channelMessageCountDictionary = (await this.Context.Guild.GetTextChannelsAsync()).ToDictionary(channel => channel.Id, channel => allCachedMessages.Values.Count(e => e.Channel.Id == channel.Id));
 
             builder.Fields.Add(new EmbedFieldBuilder
             {
@@ -2372,8 +2627,10 @@ namespace CSharpDewott.Commands
         [Command("pkinfo"), Summary("Retrieves the requested Pokémon's data from a customly built library"), Alias("poke", "pokeinfo")]
         public async Task PokemonInfo(
             [Summary("Pokémon's name to search. Must be in quotes if there are spaces.")]
-            string pokeName)
+            params string[] pokeNameStrings)
         {
+            string pokeName = string.Join(" ", pokeNameStrings);
+
             await this.Context.Channel.TriggerTypingAsync();
 
             string parsedImageUrl = string.Empty;
@@ -2416,7 +2673,7 @@ namespace CSharpDewott.Commands
                 // So we do this instead :^)
                 Image image = null;
 
-                if (HttpHelper.URLExists(parsedImageUrl))
+                if (HttpHelper.UrlExists(parsedImageUrl))
                 {
                     byte[] imageBytes = await Program.Instance.HttpClient.GetByteArrayAsync(parsedImageUrl);
 
