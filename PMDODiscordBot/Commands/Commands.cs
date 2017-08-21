@@ -11,10 +11,12 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Xml;
 using CSharpDewott.Deserialization;
+using CSharpDewott.Encryption;
 using CSharpDewott.ESixOptions;
 using CSharpDewott.Extensions;
 using CSharpDewott.GameInfo;
@@ -30,15 +32,13 @@ using Discord.Audio;
 using Discord.Commands;
 using Discord.WebSocket;
 using Humanizer;
-using Microsoft.Scripting.Utils;
 using MySql.Data.MySqlClient;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using RestSharp.Extensions;
 using Color = System.Drawing.Color;
-using unirest_net.http;
 using Image = System.Drawing.Image;
 using ImageFormat = System.Drawing.Imaging.ImageFormat;
+using ParameterInfo = Discord.Commands.ParameterInfo;
 
 namespace CSharpDewott.Commands
 {
@@ -262,6 +262,64 @@ namespace CSharpDewott.Commands
             }
         }
 
+        [Command("eval"), AdminPrecondition]
+        public async Task Eval(string inputCommand)
+        {
+            object obj = this.Context;
+
+            foreach (string part in inputCommand.Split('.'))
+            {
+                if (obj == null)
+                {
+                    await this.ReplyAsync($"obj returned null on command part before \"{part}\"!");
+                    return;
+                }
+
+                Type type = obj.GetType();
+                PropertyInfo propertyInfo = type.GetProperties().FirstOrDefault(e => string.Equals(e.Name, part, StringComparison.CurrentCultureIgnoreCase));
+                if (propertyInfo == null)
+                {
+                    MethodInfo methodInfo = type.GetMethods().FirstOrDefault(e => string.Equals(e.Name, Regex.Match(part, @"[^\(]+").Value, StringComparison.CurrentCultureIgnoreCase));
+
+                    if (methodInfo == null)
+                    {
+                        await this.ReplyAsync($"info returned null on command part \"{part}\" (Regex:{Regex.Match(part, @"[^(]+").Value})!");
+                        return;
+                    }
+
+                    List<object> parameterList = new List<object>();
+
+                    foreach (string s in part.Replace(Regex.Match(part, @"[^\(]+").Value, string.Empty).Replace(")", string.Empty).Replace("(", string.Empty).Split(',').Select(e => e.Trim()))
+                    {
+                        if (ulong.TryParse(s, out ulong result))
+                        {
+                            parameterList.Add(result);
+                        }
+                        else if (bool.TryParse(s, out bool boolResult))
+                        {
+                            parameterList.Add(boolResult);
+                        }
+                        else if (s.ToLower() == "null")
+                        {
+                            parameterList.Add(null);
+                        }
+                        else
+                        {
+                            parameterList.Add(s);
+                        }
+                    }
+
+                    obj = methodInfo.Invoke(obj, parameterList.ToArray());
+                }
+                else
+                {
+                    obj = propertyInfo.GetValue(obj, null);
+                }
+            }
+
+            await this.ReplyAsync(obj.ToString());
+        }
+
         [Command("poll")]
         [Summary("Creates a poll with an option to vote up or down")]
         public async Task Poll(
@@ -423,7 +481,7 @@ namespace CSharpDewott.Commands
 
             foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)).Where(e => !File.ReadAllLines(Path.Combine(Program.AppPath, "markov-blacklists", "blacklists.txt")).Any(e.Contains)))
             {
-                allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
+                allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(Aesgcm.SimpleDecrypt(File.ReadAllText(file), Globals.EncryptKey), new JsonSerializerSettings
                 {
                     PreserveReferencesHandling = PreserveReferencesHandling.Objects,
                     ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
@@ -1046,7 +1104,7 @@ namespace CSharpDewott.Commands
 
                 foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)).Where(e => !File.ReadAllLines(Path.Combine(Program.AppPath, "markov-blacklists", $"blacklists.txt")).Any(e.Contains)))
                 {
-                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
+                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(Aesgcm.SimpleDecrypt(File.ReadAllText(file), Globals.EncryptKey), new JsonSerializerSettings
                     {
                         PreserveReferencesHandling = PreserveReferencesHandling.Objects,
                         ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
@@ -1145,7 +1203,7 @@ namespace CSharpDewott.Commands
 
                 foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)).Where(e => !File.ReadAllLines(Path.Combine(Program.AppPath, "markov-blacklists", $"blacklists.txt")).Any(e.Contains)))
                 {
-                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
+                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(Aesgcm.SimpleDecrypt(File.ReadAllText(file), Globals.EncryptKey), new JsonSerializerSettings
                     {
                         PreserveReferencesHandling = PreserveReferencesHandling.Objects,
                         ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
@@ -1246,7 +1304,7 @@ namespace CSharpDewott.Commands
 
                 foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)).Where(e => !File.ReadAllLines(Path.Combine(Program.AppPath, "markov-blacklists", $"blacklists.txt")).Any(e.Contains)))
                 {
-                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
+                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(Aesgcm.SimpleDecrypt(File.ReadAllText(file), Globals.EncryptKey), new JsonSerializerSettings
                     {
                         PreserveReferencesHandling = PreserveReferencesHandling.Objects,
                         ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
@@ -1345,7 +1403,7 @@ namespace CSharpDewott.Commands
 
                 foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)).Where(e => !File.ReadAllLines(Path.Combine(Program.AppPath, "markov-blacklists", $"blacklists.txt")).Any(e.Contains)))
                 {
-                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
+                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(Aesgcm.SimpleDecrypt(File.ReadAllText(file), Globals.EncryptKey), new JsonSerializerSettings
                     {
                         PreserveReferencesHandling = PreserveReferencesHandling.Objects,
                         ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
@@ -2476,7 +2534,7 @@ namespace CSharpDewott.Commands
 
             foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)))
             {
-                allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
+                allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(Aesgcm.SimpleDecrypt(File.ReadAllText(file), Globals.EncryptKey), new JsonSerializerSettings
                 {
                     PreserveReferencesHandling = PreserveReferencesHandling.Objects,
                     ReferenceLoopHandling = ReferenceLoopHandling.Ignore,

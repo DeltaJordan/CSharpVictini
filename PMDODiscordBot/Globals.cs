@@ -9,6 +9,8 @@ namespace CSharpDewott
 
         public static CommandService CommandService;
 
+        public static byte[] EncryptKey { get; set; }
+
         //public static List<IDisposable> TypingDisposable = new List<IDisposable>();
 
     }

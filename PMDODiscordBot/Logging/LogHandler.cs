@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using CSharpDewott.Commands;
 using CSharpDewott.Deserialization;
+using CSharpDewott.Encryption;
 using CSharpDewott.Extensions;
 using Discord;
 using Discord.WebSocket;
@@ -43,7 +44,7 @@ namespace CSharpDewott.Logging
                 foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", ((ITextChannel)deleteOriginChannel).Guild.Name)))
                 {
                     allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(
-                        File.ReadAllText(file), new JsonSerializerSettings
+                        Aesgcm.SimpleDecrypt(File.ReadAllText(file), Globals.EncryptKey), new JsonSerializerSettings
                         {
                             PreserveReferencesHandling = PreserveReferencesHandling.Objects,
                             ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
@@ -112,15 +113,15 @@ namespace CSharpDewott.Logging
 
                 foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", ((ITextChannel)message.Channel).Guild.Name)))
                 {
-                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(File.ReadAllText(file), new JsonSerializerSettings
+                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(Aesgcm.SimpleDecrypt(File.ReadAllText(file), Globals.EncryptKey), new JsonSerializerSettings
                     {
                         PreserveReferencesHandling = PreserveReferencesHandling.Objects,
                         ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
                         TypeNameHandling = TypeNameHandling.Auto
-                    }));
+                    }), true);
                 }
 
-                allCachedMessages = allCachedMessages.AddRange(bufferDeserializedMessages);
+                allCachedMessages = allCachedMessages.AddRange(bufferDeserializedMessages, true);
                 bufferDeserializedMessages.Clear();
 
                 foreach (ITextChannel textChannel in await ((ITextChannel)message.Channel).Guild.GetTextChannelsAsync())
