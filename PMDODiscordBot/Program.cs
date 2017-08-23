@@ -40,9 +40,8 @@ namespace CSharpDewott
         public static int CurrentLevel;
         public static Program Instance;
         public HttpClient HttpClient;
-
+        public static Dictionary<ulong, DeserializedMessage> LogMessages = new Dictionary<ulong, DeserializedMessage>();
         public static DiscordSocketClient Client;
-        private Dictionary<ulong, SocketUserMessage> lastMessages = new Dictionary<ulong, SocketUserMessage>();
 
 
         // private IAudioClient vClient;
@@ -52,6 +51,8 @@ namespace CSharpDewott
         /// </summary>
         public async Task MainAsync()
         {
+            AppDomain.CurrentDomain.ProcessExit += this.CurrentDomain_ProcessExit;
+
             this.HttpClient = new HttpClient();
             this.HttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("MatrixE621");
 
@@ -96,6 +97,11 @@ namespace CSharpDewott
             await Task.Delay(-1);
         }
 
+        private void CurrentDomain_ProcessExit(object sender, EventArgs e)
+        {
+            // TODO add logging?
+        }
+
         public static async Task Client_Ready()
         {
             try
@@ -111,22 +117,13 @@ namespace CSharpDewott
 
                 Globals.EncryptKey = Aesgcm.NewKey();
 
-                Dictionary<ulong, DeserializedMessage> messages = new Dictionary<ulong, DeserializedMessage>();
-
                 foreach (SocketTextChannel socketGuildChannel in Client.GetGuild(329174505371074560).TextChannels)
                 {
                     FileHelper.CreateIfDoesNotExist(AppPath, "Logs", Client.GetGuild(329174505371074560).Name, new string(socketGuildChannel.Id.ToString().ToCharArray().Where(e => !Path.GetInvalidFileNameChars().Contains(e)).ToArray()) + ".json");
 
                     List<IReadOnlyCollection<IMessage>> messagesList = await socketGuildChannel.GetMessagesAsync(int.MaxValue).ToList();
 
-                    messages.AddRange(messagesList.Aggregate(messages, (current, readOnlyCollection) => current.AddRange(readOnlyCollection.Select(e => new DeserializedMessage(e.Id, e.IsTTS, e.IsPinned, e.Content, e.Timestamp, e.EditedTimestamp, e.CreatedAt, new DeserializableUser(e.Author.Id, e.Author.CreatedAt, e.Author.Mention, e.Author.AvatarId, e.Author.DiscriminatorValue, e.Author.Discriminator, e.Author.IsBot, e.Author.IsWebhook, e.Author.Username), new DeserializedChannel(e.Channel.Id, e.Channel.CreatedAt, e.Channel.Name, e.Channel.IsNsfw))).ToDictionary(e => e.Id))), true);
-
-                    File.WriteAllText(Path.Combine(AppPath, "Logs", Client.GetGuild(329174505371074560).Name, new string(socketGuildChannel.Id.ToString().ToCharArray().Where(e => !Path.GetInvalidFileNameChars().Contains(e)).ToArray()) + ".json"), Aesgcm.SimpleEncrypt(JsonConvert.SerializeObject(messages, Newtonsoft.Json.Formatting.Indented, new JsonSerializerSettings
-                    {
-                        PreserveReferencesHandling = PreserveReferencesHandling.Objects,
-                        ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-                        TypeNameHandling = TypeNameHandling.Auto
-                    }), Globals.EncryptKey));
+                    LogMessages = messagesList.Aggregate(LogMessages, (current, readOnlyCollection) => current.AddRange(readOnlyCollection.Select(e => new DeserializedMessage(e.Id, e.IsTTS, e.IsPinned, e.Content, e.Timestamp, e.EditedTimestamp, e.CreatedAt, new DeserializableUser(e.Author.Id, e.Author.CreatedAt, e.Author.Mention, e.Author.AvatarId, e.Author.DiscriminatorValue, e.Author.Discriminator, e.Author.IsBot, e.Author.IsWebhook, e.Author.Username), new DeserializedChannel(e.Channel.Id, e.Channel.CreatedAt, e.Channel.Name, e.Channel.IsNsfw))).ToDictionary(e => e.Id)));
                 }
             }
             catch (Exception e)

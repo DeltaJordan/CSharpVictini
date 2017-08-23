@@ -39,18 +39,7 @@ namespace CSharpDewott.Logging
         {
             try
             {
-                Dictionary<ulong, DeserializedMessage> allCachedMessages = new Dictionary<ulong, DeserializedMessage>();
-
-                foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", ((ITextChannel)deleteOriginChannel).Guild.Name)))
-                {
-                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(
-                        Aesgcm.SimpleDecrypt(File.ReadAllText(file), Globals.EncryptKey), new JsonSerializerSettings
-                        {
-                            PreserveReferencesHandling = PreserveReferencesHandling.Objects,
-                            ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-                            TypeNameHandling = TypeNameHandling.Auto
-                        }));
-                }
+                Dictionary<ulong, DeserializedMessage> allCachedMessages = Program.LogMessages;
 
                 if (client.GetGuild(329174505371074560).Channels.Any(e => e.Id == deleteOriginChannel.Id) && allCachedMessages.TryGetValue(messageCache.Value.Id, out DeserializedMessage matureMessage))
                 {
@@ -108,31 +97,8 @@ namespace CSharpDewott.Logging
 
             if (Directory.Exists(Path.Combine(Program.AppPath, "Logs", ((ITextChannel)message.Channel).Guild.Name)))
             {
-
-                Dictionary<ulong, DeserializedMessage> allCachedMessages = new Dictionary<ulong, DeserializedMessage>();
-
-                foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", ((ITextChannel)message.Channel).Guild.Name)))
-                {
-                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(Aesgcm.SimpleDecrypt(File.ReadAllText(file), Globals.EncryptKey), new JsonSerializerSettings
-                    {
-                        PreserveReferencesHandling = PreserveReferencesHandling.Objects,
-                        ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-                        TypeNameHandling = TypeNameHandling.Auto
-                    }), true);
-                }
-
-                allCachedMessages = allCachedMessages.AddRange(bufferDeserializedMessages, true);
+                Program.LogMessages.AddRange(bufferDeserializedMessages, true);
                 bufferDeserializedMessages.Clear();
-
-                foreach (ITextChannel textChannel in await ((ITextChannel)message.Channel).Guild.GetTextChannelsAsync())
-                {
-                    File.WriteAllText(Path.Combine(Program.AppPath, "Logs", ((ITextChannel)message.Channel).Guild.Name, $"{textChannel.Id}.json"), JsonConvert.SerializeObject(allCachedMessages.Values.Where(e => e.Channel.Id == textChannel.Id).ToList(), Newtonsoft.Json.Formatting.Indented, new JsonSerializerSettings
-                    {
-                        PreserveReferencesHandling = PreserveReferencesHandling.Objects,
-                        ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-                        TypeNameHandling = TypeNameHandling.Auto
-                    }));
-                }
             }
         }
 

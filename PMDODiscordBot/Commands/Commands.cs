@@ -6,6 +6,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -32,12 +34,18 @@ using Discord.Audio;
 using Discord.Commands;
 using Discord.WebSocket;
 using Humanizer;
+using Imgur.API.Authentication.Impl;
+using Imgur.API.Endpoints.Impl;
+using Imgur.API.Models;
+using Imgur.API.Models.Impl;
+using Microsoft.Runtime.CompilerServices;
 using MySql.Data.MySqlClient;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Color = System.Drawing.Color;
 using Image = System.Drawing.Image;
 using ImageFormat = System.Drawing.Imaging.ImageFormat;
+using IMessage = Discord.IMessage;
 using ParameterInfo = Discord.Commands.ParameterInfo;
 
 namespace CSharpDewott.Commands
@@ -477,17 +485,7 @@ namespace CSharpDewott.Commands
                 user = this.Context.User;
             }
 
-            Dictionary<ulong, DeserializedMessage> allCachedMessages = new Dictionary<ulong, DeserializedMessage>();
-
-            foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)).Where(e => !File.ReadAllLines(Path.Combine(Program.AppPath, "markov-blacklists", "blacklists.txt")).Any(e.Contains)))
-            {
-                allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(Aesgcm.SimpleDecrypt(File.ReadAllText(file), Globals.EncryptKey), new JsonSerializerSettings
-                {
-                    PreserveReferencesHandling = PreserveReferencesHandling.Objects,
-                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-                    TypeNameHandling = TypeNameHandling.Auto
-                }));
-            }
+            Dictionary<ulong, DeserializedMessage> allCachedMessages = Program.LogMessages;
 
             File.WriteAllLines(Path.Combine(Program.AppPath, "wordcloudinput.txt"), allCachedMessages.Values.Where(e => e.Author.Id == user.Id).Select(e => e.Content));
 
@@ -937,6 +935,205 @@ namespace CSharpDewott.Commands
             await this.ReplyAsync($"Rolled {Globals.Random.Next(1, max)}");
         }
 
+        [Command("bui")]
+        public async Task BuiTask()
+        {
+            string clientId;
+
+            XmlDocument doc = new XmlDocument();
+            doc.Load(Path.Combine(AppPath, "config.xml"));
+            XmlNodeList xmlNodeList = doc.SelectNodes("/Settings/ImgurClientId");
+            if (xmlNodeList != null)
+            {
+                try
+                {
+                    clientId = xmlNodeList[0].InnerText;
+                }
+                catch (Exception exception)
+                {
+                    Console.WriteLine("Imgur client id invalid!\n\nException: " + exception);
+                    throw;
+                }
+            }
+            else
+            {
+                await this.ReplyAsync("Invalid config file!");
+                return;
+            }
+
+            ImgurClient client = new ImgurClient(clientId);
+            AlbumEndpoint endpoint = new AlbumEndpoint(client);
+            IAlbum album = await endpoint.GetAlbumAsync("KJTbv");
+
+            int randomInt = Globals.Random.Next(0, album.ImagesCount);
+
+            string imageLink = album.Images.Select(e => e.Link).ToList()[randomInt];
+
+            await this.ReplyAsync(imageLink);
+        }
+
+        [Command("dewott")]
+        public async Task DewottTask()
+        {
+            string clientId;
+
+            XmlDocument doc = new XmlDocument();
+            doc.Load(Path.Combine(AppPath, "config.xml"));
+            XmlNodeList xmlNodeList = doc.SelectNodes("/Settings/ImgurClientId");
+            if (xmlNodeList != null)
+            {
+                try
+                {
+                    clientId = xmlNodeList[0].InnerText;
+                }
+                catch (Exception exception)
+                {
+                    Console.WriteLine("Imgur client id invalid!\n\nException: " + exception);
+                    throw;
+                }
+            }
+            else
+            {
+                await this.ReplyAsync("Invalid config file!");
+                return;
+            }
+
+            ImgurClient client = new ImgurClient(clientId);
+            AlbumEndpoint endpoint = new AlbumEndpoint(client);
+            IAlbum album = await endpoint.GetAlbumAsync("qc266");
+
+            int randomInt = Globals.Random.Next(0, album.ImagesCount);
+
+            string imageLink = album.Images.Select(e => e.Link).ToList()[randomInt];
+
+            await this.ReplyAsync(imageLink);
+        }
+
+        [Command("randomize")]
+        public async Task RandomImage(params string[] imageLink)
+        {
+            IDisposable typingDisposable = this.Context.Channel.EnterTypingState();
+
+            try
+            {
+
+                string imageUrl = imageLink.Length == 0 ? this.Context.User.GetAvatarUrl() : string.Join(" ", imageLink);
+
+                if (!HttpHelper.UrlExists(imageUrl))
+                {
+                    await this.ReplyAsync("Invalid image!");
+                    return;
+                }
+
+                Image image;
+
+                using (WebClient client = new WebClient())
+                using (MemoryStream stream = new MemoryStream())
+                {
+                    byte[] imageBytes = client.DownloadData(new Uri(imageUrl));
+
+                    await stream.WriteAsync(imageBytes, 0, imageBytes.Length);
+
+                    image = Image.FromStream(stream);
+                }
+
+                Bitmap origImage;
+
+                if (image.Width > 450)
+                {
+                    double ratioX = (double) 450 / image.Width;
+                    double ratio = ratioX;
+
+                    int width = (int) (image.Width * ratio);
+                    int height = (int) (image.Height * ratio);
+
+                    Rectangle destRect = new Rectangle(0, 0, width, height);
+                    origImage = new Bitmap(width, height);
+
+                    origImage.SetResolution(image.HorizontalResolution, image.VerticalResolution);
+
+                    using (Graphics graphics = Graphics.FromImage(origImage))
+                    {
+                        graphics.CompositingMode = CompositingMode.SourceCopy;
+                        graphics.CompositingQuality = CompositingQuality.HighQuality;
+                        graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                        graphics.SmoothingMode = SmoothingMode.HighQuality;
+                        graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+                        using (ImageAttributes wrapMode = new ImageAttributes())
+                        {
+                            wrapMode.SetWrapMode(WrapMode.TileFlipXY);
+                            graphics.DrawImage(image, destRect, 0, 0, image.Width, image.Height, GraphicsUnit.Pixel, wrapMode);
+                        }
+                    }
+                }
+                else
+                {
+                    origImage = (Bitmap)image;
+                }
+
+                Bitmap bmp = new Bitmap(origImage.Width, origImage.Height);
+
+                List<(int x, int y)> remainingCoordsList = new List<(int x, int y)>();
+
+                for (int x = 0; x < bmp.Width; x++)
+                {
+                    for (int y = 0; y < bmp.Height; y++)
+                    {
+                        remainingCoordsList.Add((x, y));
+                    }
+                }
+
+                int originalX = 0;
+                int originalY = 0;
+
+                while (remainingCoordsList.Count != 1)
+                {
+                    int randomInt = Globals.Random.Next(0, remainingCoordsList.Count);
+
+                    bmp.SetPixel(originalX, originalY, origImage.GetPixel(remainingCoordsList[randomInt].x, remainingCoordsList[randomInt].y));
+
+                    remainingCoordsList.RemoveAll(e => e.x == remainingCoordsList[randomInt].x && e.y == remainingCoordsList[randomInt].y);
+
+                    if (originalX == origImage.Width - 1)
+                    {
+                        if (originalY == origImage.Height - 1)
+                        {
+                            break;
+                        }
+
+                        originalX = 0;
+                        originalY++;
+                    }
+                    else
+                    {
+                        originalX++;
+                    }
+                }
+
+                if (File.Exists(Path.Combine(Program.AppPath, "random.png")))
+                {
+                    File.Delete(Path.Combine(Program.AppPath, "random.png"));
+                }
+
+                bmp.Save(Path.Combine(Program.AppPath, "random.png"), ImageFormat.Png);
+
+                await this.Context.Channel.SendFileAsync(Path.Combine(Program.AppPath, "random.png"));
+
+                image.Dispose();
+                bmp.Dispose();
+                origImage.Dispose();
+            }
+            catch (Exception exception)
+            {
+                ConsoleHelper.WriteLine(exception);
+            }
+            finally
+            {
+                typingDisposable.Dispose();
+            }
+        }
+
         [Command("lewdmarkov"), Summary("Creates a sentence using https://github.com/jsvine/markovify/ from the a couple lemons. Innocent lemons. 🤔")]
         public async Task LewdMarkov()
         {
@@ -1100,17 +1297,7 @@ namespace CSharpDewott.Commands
                     return;
                 }
 
-                Dictionary<ulong, DeserializedMessage> allCachedMessages = new Dictionary<ulong, DeserializedMessage>();
-
-                foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)).Where(e => !File.ReadAllLines(Path.Combine(Program.AppPath, "markov-blacklists", $"blacklists.txt")).Any(e.Contains)))
-                {
-                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(Aesgcm.SimpleDecrypt(File.ReadAllText(file), Globals.EncryptKey), new JsonSerializerSettings
-                    {
-                        PreserveReferencesHandling = PreserveReferencesHandling.Objects,
-                        ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-                        TypeNameHandling = TypeNameHandling.Auto
-                    }));
-                }
+                Dictionary<ulong, DeserializedMessage> allCachedMessages = Program.LogMessages;
 
                 File.WriteAllLines(Path.Combine(Program.AppPath, "Markovs", "currentuser.txt"), allCachedMessages.Values.Select(e => e.Content));
 
@@ -1199,17 +1386,7 @@ namespace CSharpDewott.Commands
                     return;
                 }
 
-                Dictionary<ulong, DeserializedMessage> allCachedMessages = new Dictionary<ulong, DeserializedMessage>();
-
-                foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)).Where(e => !File.ReadAllLines(Path.Combine(Program.AppPath, "markov-blacklists", $"blacklists.txt")).Any(e.Contains)))
-                {
-                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(Aesgcm.SimpleDecrypt(File.ReadAllText(file), Globals.EncryptKey), new JsonSerializerSettings
-                    {
-                        PreserveReferencesHandling = PreserveReferencesHandling.Objects,
-                        ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-                        TypeNameHandling = TypeNameHandling.Auto
-                    }));
-                }
+                Dictionary<ulong, DeserializedMessage> allCachedMessages = Program.LogMessages;
 
                 allCachedMessages = allCachedMessages.Where(e => e.Value.Author.Id == user.Id).ToDictionary(e => e.Key, e => e.Value);
 
@@ -1300,17 +1477,7 @@ namespace CSharpDewott.Commands
                     return;
                 }
 
-                Dictionary<ulong, DeserializedMessage> allCachedMessages = new Dictionary<ulong, DeserializedMessage>();
-
-                foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)).Where(e => !File.ReadAllLines(Path.Combine(Program.AppPath, "markov-blacklists", $"blacklists.txt")).Any(e.Contains)))
-                {
-                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(Aesgcm.SimpleDecrypt(File.ReadAllText(file), Globals.EncryptKey), new JsonSerializerSettings
-                    {
-                        PreserveReferencesHandling = PreserveReferencesHandling.Objects,
-                        ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-                        TypeNameHandling = TypeNameHandling.Auto
-                    }));
-                }
+                Dictionary<ulong, DeserializedMessage> allCachedMessages = Program.LogMessages;
 
                 allCachedMessages = allCachedMessages.Where(e => e.Value.Author.Id == user.Id).ToDictionary(e => e.Key, e => e.Value);
 
@@ -1399,17 +1566,7 @@ namespace CSharpDewott.Commands
                     return;
                 }
 
-                Dictionary<ulong, DeserializedMessage> allCachedMessages = new Dictionary<ulong, DeserializedMessage>();
-
-                foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)).Where(e => !File.ReadAllLines(Path.Combine(Program.AppPath, "markov-blacklists", $"blacklists.txt")).Any(e.Contains)))
-                {
-                    allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(Aesgcm.SimpleDecrypt(File.ReadAllText(file), Globals.EncryptKey), new JsonSerializerSettings
-                    {
-                        PreserveReferencesHandling = PreserveReferencesHandling.Objects,
-                        ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-                        TypeNameHandling = TypeNameHandling.Auto
-                    }));
-                }
+                Dictionary<ulong, DeserializedMessage> allCachedMessages = Program.LogMessages;
 
                 allCachedMessages = allCachedMessages.Where(e => users.Any(f => f.Id == e.Value.Author.Id)).ToDictionary(e => e.Key, e => e.Value);
 
@@ -2530,17 +2687,7 @@ namespace CSharpDewott.Commands
         [Command("stats"), Summary("Gets random info about the server."), Alias("stat", "serverinfo")]
         public async Task Stats()
         {
-            Dictionary<ulong, DeserializedMessage> allCachedMessages = new Dictionary<ulong, DeserializedMessage>();
-
-            foreach (string file in Directory.GetFiles(Path.Combine(Program.AppPath, "Logs", this.Context.Guild.Name)))
-            {
-                allCachedMessages = allCachedMessages.AddRange(JsonConvert.DeserializeObject<Dictionary<ulong, DeserializedMessage>>(Aesgcm.SimpleDecrypt(File.ReadAllText(file), Globals.EncryptKey), new JsonSerializerSettings
-                {
-                    PreserveReferencesHandling = PreserveReferencesHandling.Objects,
-                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-                    TypeNameHandling = TypeNameHandling.Auto
-                }));
-            }
+            Dictionary<ulong, DeserializedMessage> allCachedMessages = Program.LogMessages;
 
             EmbedBuilder builder = new EmbedBuilder
             {
