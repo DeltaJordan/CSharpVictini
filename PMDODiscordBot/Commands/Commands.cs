@@ -277,27 +277,29 @@ namespace CSharpDewott.Commands
 
             foreach (string part in inputCommand.Split('.'))
             {
+                string replacePart = part.Replace("▲", ".");
+
                 if (obj == null)
                 {
-                    await this.ReplyAsync($"obj returned null on command part before \"{part}\"!");
+                    await this.ReplyAsync($"obj returned null on command part before \"{replacePart}\"!");
                     return;
                 }
 
                 Type type = obj.GetType();
-                PropertyInfo propertyInfo = type.GetProperties().FirstOrDefault(e => string.Equals(e.Name, part, StringComparison.CurrentCultureIgnoreCase));
+                PropertyInfo propertyInfo = type.GetProperties().FirstOrDefault(e => string.Equals(e.Name, replacePart, StringComparison.CurrentCultureIgnoreCase));
                 if (propertyInfo == null)
                 {
-                    MethodInfo methodInfo = type.GetMethods().FirstOrDefault(e => string.Equals(e.Name, Regex.Match(part, @"[^\(]+").Value, StringComparison.CurrentCultureIgnoreCase));
+                    MethodInfo methodInfo = type.GetMethods().FirstOrDefault(e => string.Equals(e.Name, Regex.Match(replacePart, @"[^\(]+").Value, StringComparison.CurrentCultureIgnoreCase));
 
                     if (methodInfo == null)
                     {
-                        await this.ReplyAsync($"info returned null on command part \"{part}\" (Regex:{Regex.Match(part, @"[^(]+").Value})!");
+                        await this.ReplyAsync($"info returned null on command part \"{replacePart}\" (Regex:{Regex.Match(replacePart, @"[^(]+").Value})!");
                         return;
                     }
 
                     List<object> parameterList = new List<object>();
 
-                    foreach (string s in part.Replace(Regex.Match(part, @"[^\(]+").Value, string.Empty).Replace(")", string.Empty).Replace("(", string.Empty).Split(',').Select(e => e.Trim()))
+                    foreach (string s in replacePart.Replace(Regex.Match(replacePart, @"[^\(]+").Value, string.Empty).Replace(")", string.Empty).Replace("(", string.Empty).Split(',').Select(e => e.Trim()))
                     {
                         if (ulong.TryParse(s, out ulong result))
                         {

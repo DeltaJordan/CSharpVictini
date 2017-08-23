@@ -107,20 +107,11 @@ namespace CSharpDewott
             try
             {
                 await Client.SetGameAsync("gathering logs, may be slow");
-                foreach (string file in Directory.GetFiles(Path.Combine(AppPath, "Logs", "Jordan's a Fucking Dewott")))
-                {
-                    if (!Client.GetGuild(329174505371074560).TextChannels.Select(e => e.Id.ToString()).Contains(Path.GetFileNameWithoutExtension(file)))
-                    {
-                        File.Delete(file);
-                    }
-                }
 
                 Globals.EncryptKey = Aesgcm.NewKey();
 
                 foreach (SocketTextChannel socketGuildChannel in Client.GetGuild(329174505371074560).TextChannels)
                 {
-                    FileHelper.CreateIfDoesNotExist(AppPath, "Logs", Client.GetGuild(329174505371074560).Name, new string(socketGuildChannel.Id.ToString().ToCharArray().Where(e => !Path.GetInvalidFileNameChars().Contains(e)).ToArray()) + ".json");
-
                     List<IReadOnlyCollection<IMessage>> messagesList = await socketGuildChannel.GetMessagesAsync(int.MaxValue).ToList();
 
                     LogMessages = messagesList.Aggregate(LogMessages, (current, readOnlyCollection) => current.AddRange(readOnlyCollection.Select(e => new DeserializedMessage(e.Id, e.IsTTS, e.IsPinned, e.Content, e.Timestamp, e.EditedTimestamp, e.CreatedAt, new DeserializableUser(e.Author.Id, e.Author.CreatedAt, e.Author.Mention, e.Author.AvatarId, e.Author.DiscriminatorValue, e.Author.Discriminator, e.Author.IsBot, e.Author.IsWebhook, e.Author.Username), new DeserializedChannel(e.Channel.Id, e.Channel.CreatedAt, e.Channel.Name, e.Channel.IsNsfw))).ToDictionary(e => e.Id)));
