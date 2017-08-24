@@ -1,12 +1,12 @@
 ﻿// <copyright file="Program.cs" company="JordantheBuizel">
 // Copyright (c) JordantheBuizel. All rights reserved.
 // </copyright>
+extern alias http;
 
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
 using System.Reflection;
 using System.Threading.Tasks;
 using System.Xml;
@@ -22,6 +22,7 @@ using CSharpDewott.Preconditions;
 using Discord;
 using Discord.Commands;
 using Discord.WebSocket;
+using http::System.Net.Http;
 using Newtonsoft.Json;
 using Image = System.Drawing.Image;
 
