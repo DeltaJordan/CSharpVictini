@@ -360,6 +360,25 @@ namespace CSharpDewott.Commands
             {
                 await message.Channel.SendMessageAsync("no u");
             }
+
+            if (message.Content.ToLower().Contains("boo") && message.Content.ToLower().Contains("u") && message.Content.Contains(client.CurrentUser.Mention))
+            {
+                string booU = "boo";
+
+                for (int i = 0; i < Globals.Random.Next(7); i++)
+                {
+                    booU += "o";
+                }
+
+                booU += " ";
+
+                for (int i = 0; i < Globals.Random.Next(7); i++)
+                {
+                    booU += "u";
+                }
+
+                await message.Channel.SendMessageAsync($"no {booU} {message.Author.Mention}");
+            }
         }
     }
 }
