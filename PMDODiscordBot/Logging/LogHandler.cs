@@ -25,8 +25,8 @@ namespace CSharpDewott.Logging
             Program.Client.MessageDeleted += Client_MessageDeleted;
             Program.Client.MessageUpdated += Client_MessageUpdated;
             Program.Client.MessageReceived += Client_AddLogMessage;
-            Program.Client.UserUpdated += Client_UserUpdated;
-            Program.Client.GuildMemberUpdated += Client_GuildMemberUpdated;
+            //Program.Client.UserUpdated += Client_UserUpdated;
+            //Program.Client.GuildMemberUpdated += Client_GuildMemberUpdated;
         }
 
         private static async Task Client_GuildMemberUpdated(SocketGuildUser userAfter, SocketGuildUser userBefore)
