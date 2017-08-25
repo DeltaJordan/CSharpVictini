@@ -34,6 +34,8 @@ namespace CSharpDewott.Commands
 
         private static Dictionary<ulong, Stopwatch> e6Stopwatches = new Dictionary<ulong, Stopwatch>();
 
+        private static List<string> e621JsonList = new List<string>();
+
         [Command("bui")]
         public async Task BuiTask()
         {
@@ -317,6 +319,18 @@ namespace CSharpDewott.Commands
             await this.E6Task(tags);
         }
 
+        private async Task GetJson(int pageNumber, List<string> tags)
+        {
+            string nextE6Json = await Program.Instance.HttpClient.GetStringAsync($"https://e621.net/post/index.json?limit=320&tags={string.Join(" ", tags)}&page={pageNumber}");
+
+            if (nextE6Json == "[]")
+            {
+                return;
+            }
+
+            e621JsonList.Add(nextE6Json.Trim('[', ']'));
+        }
+
         [Command("e6"), Summary("Retrieves an image from e621.net. If the channel is sfw, the command forces the \"rating:safe\" tag to be used. Also remove type tags that are requesting video files")]
         public async Task E6Task(params string[] tags)
         {
@@ -331,7 +345,6 @@ namespace CSharpDewott.Commands
             UserOptions options;
 
             bool getJsonId = tags.Any(e => e.ToLower().Contains("<getid>"));
-
 
             try
             {
@@ -408,29 +421,16 @@ namespace CSharpDewott.Commands
                     forcedTags = forcedTags.Take(6).ToList();
                 }
 
-                string url = $"https://e621.net/post/index.json?limit=320&tags={string.Join(" ", forcedTags)}";
+                List<Task> taskList = new List<Task>();
 
-                string e6Json = (await Program.Instance.HttpClient.GetStringAsync(url)).TrimEnd(']');
-
-                string nextE6Json = string.Empty;
-
-                int page = 2;
-
-                while (nextE6Json == string.Empty || Regex.Matches(nextE6Json, "id:").Count >= 320)
+                for (int i = 1; i < 11; i++)
                 {
-                    nextE6Json = await Program.Instance.HttpClient.GetStringAsync(url + $"&page={page}");
-
-                    if (nextE6Json == "[]")
-                    {
-                        break;
-                    }
-
-                    e6Json += "," + nextE6Json.TrimStart('[').TrimEnd(']');
-
-                    page++;
+                    taskList.Add(this.GetJson(i, forcedTags));
                 }
 
-                e6Json += "]";
+                await Task.WhenAll(taskList);
+
+                string e6Json = "[" + string.Join(",", e621JsonList) + "]";
 
                 JArray images = JArray.Parse(e6Json);
 
@@ -491,7 +491,7 @@ namespace CSharpDewott.Commands
                     return false;
                 });
 
-                images = new JArray(filteredImages.ToList());
+                images = new JArray(filteredImages);
 
 
                 if (images.Count == 0)
@@ -502,7 +502,7 @@ namespace CSharpDewott.Commands
 
                 if (getNumberOfImages)
                 {
-                    await this.ReplyAsync($"Counted {images.Count} images. Please note that this command enforces a limit of 640 posts, which is then filtered to remove blacklist items and unsupported filetypes.");
+                    await this.ReplyAsync($"Counted {images.Count} images. Please note that this command enforces a limit of query pages, which is then filtered to remove blacklist items and unsupported filetypes.");
                     return;
                 }
 
@@ -524,7 +524,7 @@ namespace CSharpDewott.Commands
 
                     string ext = selectedImage.GetValue("file_ext").ToObject<string>();
 
-                    url = selectedImage.GetValue("file_url").ToObject<string>() ?? throw new Exception("Couldn't find an image with those tags.");
+                    string url = selectedImage.GetValue("file_url").ToObject<string>() ?? throw new Exception("Couldn't find an image with those tags.");
 
 
                     //                    if (selectedImage.GetValue("file_size").ToObject<ulong>() > 8000000)

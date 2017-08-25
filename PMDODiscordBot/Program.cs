@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Xml;
 using CSharpDewott.Commands;
@@ -98,9 +99,10 @@ namespace CSharpDewott
             await Task.Delay(-1);
         }
 
-        private void CurrentDomain_ProcessExit(object sender, EventArgs e)
+        private async void CurrentDomain_ProcessExit(object sender, EventArgs e)
         {
-            // TODO add logging?
+            await Client.LogoutAsync();
+            // TODO add file logging?
         }
 
         public static async Task Client_Ready()
