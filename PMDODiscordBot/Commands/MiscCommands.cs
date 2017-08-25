@@ -940,7 +940,7 @@ namespace CSharpDewott.Commands
         [Command("stats"), Summary("Gets random info about the server."), Alias("stat", "serverinfo")]
         public async Task Stats()
         {
-            Dictionary<ulong, DeserializedMessage> allCachedMessages = Program.LogMessages;
+            Dictionary<ulong, IMessage> allCachedMessages = Program.LogMessages;
 
             EmbedBuilder builder = new EmbedBuilder
             {

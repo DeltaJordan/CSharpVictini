@@ -179,7 +179,7 @@ namespace CSharpDewott.Commands
                     return;
                 }
 
-                Dictionary<ulong, DeserializedMessage> allCachedMessages = Program.LogMessages;
+                Dictionary<ulong, IMessage> allCachedMessages = Program.LogMessages;
 
                 File.WriteAllLines(Path.Combine(Program.AppPath, "Markovs", "currentuser.txt"), allCachedMessages.Values.Select(e => e.Content));
 
@@ -268,7 +268,7 @@ namespace CSharpDewott.Commands
                     return;
                 }
 
-                Dictionary<ulong, DeserializedMessage> allCachedMessages = Program.LogMessages;
+                Dictionary<ulong, IMessage> allCachedMessages = Program.LogMessages;
 
                 allCachedMessages = allCachedMessages.Where(e => e.Value.Author.Id == user.Id).ToDictionary(e => e.Key, e => e.Value);
 
@@ -359,7 +359,7 @@ namespace CSharpDewott.Commands
                     return;
                 }
 
-                Dictionary<ulong, DeserializedMessage> allCachedMessages = Program.LogMessages;
+                Dictionary<ulong, IMessage> allCachedMessages = Program.LogMessages;
 
                 allCachedMessages = allCachedMessages.Where(e => e.Value.Author.Id == user.Id).ToDictionary(e => e.Key, e => e.Value);
 
@@ -448,7 +448,7 @@ namespace CSharpDewott.Commands
                     return;
                 }
 
-                Dictionary<ulong, DeserializedMessage> allCachedMessages = Program.LogMessages;
+                Dictionary<ulong, IMessage> allCachedMessages = Program.LogMessages;
 
                 allCachedMessages = allCachedMessages.Where(e => users.Any(f => f.Id == e.Value.Author.Id)).ToDictionary(e => e.Key, e => e.Value);
 

@@ -22,7 +22,6 @@ namespace CSharpDewott.Commands
     public static class CommandHandler
     {
         private static int currentGuesses;
-        private static DiscordSocketClient client;
         private static CommandService commands;
 
         public static async Task InitializeCommandHandler()
@@ -34,7 +33,6 @@ namespace CSharpDewott.Commands
 
             commands.Log += LogHandler.Log;
 
-            client = Program.Client;
             Globals.CommandService = commands;
             
             // Discover all of the commands in this assembly and load them.
@@ -220,7 +218,7 @@ namespace CSharpDewott.Commands
             if (message.HasCharPrefix('.', ref argPos))
             {
                 // Create a Command Context
-                CommandContext context = new CommandContext(client, message);
+                CommandContext context = new CommandContext(Program.Client, message);
 
                 string commandName = message.Content.Substring(1).Split(' ')[0].Trim();
 
@@ -361,7 +359,7 @@ namespace CSharpDewott.Commands
                 await message.Channel.SendMessageAsync("no u");
             }
 
-            if (message.Content.ToLower().Contains("boo") && message.Content.ToLower().Contains("u") && message.Content.Contains(client.CurrentUser.Mention))
+            if (message.Content.ToLower().Contains("boo") && message.Content.ToLower().Contains("u") && message.Content.Contains(Program.Client.CurrentUser.Mention))
             {
                 string booU = "boo";
 

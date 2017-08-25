@@ -42,7 +42,7 @@ namespace CSharpDewott
         public static int CurrentLevel;
         public static Program Instance;
         public HttpClient HttpClient;
-        public static Dictionary<ulong, DeserializedMessage> LogMessages = new Dictionary<ulong, DeserializedMessage>();
+        public static Dictionary<ulong, IMessage> LogMessages;
         public static DiscordSocketClient Client;
 
 
@@ -51,7 +51,7 @@ namespace CSharpDewott
         /// <summary>
         /// Bot's main method
         /// </summary>
-        public async Task MainAsync()
+        private async Task MainAsync()
         {
             AppDomain.CurrentDomain.ProcessExit += this.CurrentDomain_ProcessExit;
 
@@ -60,7 +60,9 @@ namespace CSharpDewott
 
             Client = new DiscordSocketClient(new DiscordSocketConfig
             {
-                MessageCacheSize = 5
+                MessageCacheSize = 50,
+                AlwaysDownloadUsers = true,
+                LargeThreshold = 500
             });
 
             Client.Ready += Client_Ready;
@@ -105,20 +107,50 @@ namespace CSharpDewott
             // TODO add file logging?
         }
 
+        private static async Task AddLog(ulong channelId)
+        {
+            using (IAsyncEnumerator<IReadOnlyCollection<IMessage>> enumerator = Client.GetGuild(329174505371074560).GetTextChannel(channelId).GetMessagesAsync(int.MaxValue).GetEnumerator())
+            {
+                while (await enumerator.MoveNext())
+                {
+                    foreach (IMessage message in enumerator.Current)
+                    {
+                        try
+                        {
+                            LogMessages.Add(message.Id, message);
+                        }
+                        catch (Exception e)
+                        {
+                            Console.WriteLine(e);
+                        }
+                    }
+                }
+            }
+        }
+
         public static async Task Client_Ready()
         {
             try
             {
                 await Client.SetGameAsync("gathering logs, may be slow");
 
+                if (LogMessages == null)
+                {
+                    LogMessages = new Dictionary<ulong, IMessage>();
+                }
+
+                LogMessages.Clear();
+
                 Globals.EncryptKey = Aesgcm.NewKey();
+
+                List<Task> taskList = new List<Task>();
 
                 foreach (SocketTextChannel socketGuildChannel in Client.GetGuild(329174505371074560).TextChannels)
                 {
-                    List<IReadOnlyCollection<IMessage>> messagesList = await socketGuildChannel.GetMessagesAsync(int.MaxValue).ToList();
-
-                    LogMessages = messagesList.Aggregate(LogMessages, (current, readOnlyCollection) => current.AddRange(readOnlyCollection.Select(e => new DeserializedMessage(e.Id, e.IsTTS, e.IsPinned, e.Content, e.Timestamp, e.EditedTimestamp, e.CreatedAt, new DeserializableUser(e.Author.Id, e.Author.CreatedAt, e.Author.Mention, e.Author.AvatarId, e.Author.DiscriminatorValue, e.Author.Discriminator, e.Author.IsBot, e.Author.IsWebhook, e.Author.Username), new DeserializedChannel(e.Channel.Id, e.Channel.CreatedAt, e.Channel.Name, e.Channel.IsNsfw))).ToDictionary(e => e.Id)));
+                    taskList.Add(AddLog(socketGuildChannel.Id));
                 }
+
+                await Task.WhenAll(taskList);
             }
             catch (Exception e)
             {

@@ -83,6 +83,7 @@
     <Compile Include="Extensions\HttpHelper.cs" />
     <Compile Include="Extensions\StringExtension.cs" />
     <Compile Include="Extensions\SystemColorToDiscord.cs" />
+    <Compile Include="Extensions\UserHelper.cs" />
     <Compile Include="GameInfo\NGRecords.cs" />
     <Compile Include="GameInfo\Player.cs" />
     <Compile Include="Globals.cs" />

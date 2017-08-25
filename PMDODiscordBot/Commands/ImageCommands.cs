@@ -25,6 +25,7 @@ using Newtonsoft.Json.Linq;
 using Color = System.Drawing.Color;
 using Image = System.Drawing.Image;
 using ImageFormat = Discord.ImageFormat;
+using IMessage = Discord.IMessage;
 
 namespace CSharpDewott.Commands
 {
@@ -264,7 +265,7 @@ namespace CSharpDewott.Commands
                 user = this.Context.User;
             }
 
-            Dictionary<ulong, DeserializedMessage> allCachedMessages = Program.LogMessages;
+            Dictionary<ulong, IMessage> allCachedMessages = Program.LogMessages;
 
             File.WriteAllLines(Path.Combine(Program.AppPath, "wordcloudinput.txt"), allCachedMessages.Values.Where(e => e.Author.Id == user.Id).Select(e => e.Content));
 

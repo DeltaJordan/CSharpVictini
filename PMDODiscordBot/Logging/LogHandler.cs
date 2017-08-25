@@ -16,18 +16,45 @@ namespace CSharpDewott.Logging
 {
     public static class LogHandler
     {
-        private static Dictionary<ulong, DeserializedMessage> bufferDeserializedMessages = new Dictionary<ulong, DeserializedMessage>();
-        private static DiscordSocketClient client;
+        private static Dictionary<ulong, IMessage> bufferIMessages = new Dictionary<ulong, IMessage>();
 
         public static async Task InititializeLogs()
         {
-            client = Program.Client;// Hook the MessageReceived Event into our Command Handler
+            Program.Client.Log += Log;
+            Program.Client.MessageReceived += HandleCommand;
+            Program.Client.MessageDeleted += Client_MessageDeleted;
+            Program.Client.MessageUpdated += Client_MessageUpdated;
+            Program.Client.MessageReceived += Client_AddLogMessage;
+            Program.Client.UserUpdated += Client_UserUpdated;
+            Program.Client.GuildMemberUpdated += Client_GuildMemberUpdated;
+        }
 
-            client.Log += Log;
-            client.MessageReceived += HandleCommand;
-            client.MessageDeleted += Client_MessageDeleted;
-            client.MessageUpdated += Client_MessageUpdated;
-            client.MessageReceived += Client_AddLogMessage;
+        private static async Task Client_GuildMemberUpdated(SocketGuildUser userAfter, SocketGuildUser userBefore)
+        {
+            if (Program.Client.GetGuild(329174505371074560).Users.FirstOrDefault(e => e.Id == userAfter.Id) != null && !string.IsNullOrWhiteSpace(userAfter.Nickname))
+            {
+                if (Program.Client.GetGuild(329174505371074560).Roles.Where(e => e.IsMentionable).Any(e => string.Equals(e.Name, userAfter.Nickname, StringComparison.CurrentCultureIgnoreCase)))
+                {
+                    await userAfter.ModifyAsync(e =>
+                    {
+                        e.Nickname = string.IsNullOrWhiteSpace(userBefore.Nickname) ? null : userBefore.Nickname;
+                    });
+
+                    await (await userAfter.GetOrCreateDMChannelAsync()).SendMessageAsync("You cannot change your nickname to the name of a mentionable role!");
+                }
+            }
+        }
+
+        private static async Task Client_UserUpdated(SocketUser userBefore, SocketUser userAfter)
+        {
+            if (Program.Client.GetGuild(329174505371074560).Users.FirstOrDefault(e => e.Id == userAfter.Id) != null)
+            {
+                if (Program.Client.GetGuild(329174505371074560).Roles.Where(e => e.IsMentionable).Any(e => string.Equals(e.Name, userAfter.Username, StringComparison.CurrentCultureIgnoreCase)))
+                {
+                    await (await userAfter.GetOrCreateDMChannelAsync()).SendMessageAsync("Please change your name to to something that is not a mentionable role as soon as possible.\nIf you don't not agree to this, further actions will be taken against you.");
+                    await (await (await Program.Client.GetApplicationInfoAsync()).Owner.GetOrCreateDMChannelAsync()).SendMessageAsync($"{userAfter.Mention} has changed their name to a mentionable role!");
+                }
+            }
         }
 
         private static async Task Client_MessageUpdated(Cacheable<IMessage, ulong> messageCache, SocketMessage newMessage, ISocketMessageChannel originChannel)
@@ -39,12 +66,12 @@ namespace CSharpDewott.Logging
         {
             try
             {
-                Dictionary<ulong, DeserializedMessage> allCachedMessages = Program.LogMessages;
+                Dictionary<ulong, IMessage> allCachedMessages = Program.LogMessages;
 
-                if (client.GetGuild(329174505371074560).Channels.Any(e => e.Id == deleteOriginChannel.Id) && allCachedMessages.TryGetValue(messageCache.Value.Id, out DeserializedMessage matureMessage))
+                if (Program.Client.GetGuild(329174505371074560).Channels.Any(e => e.Id == deleteOriginChannel.Id) && allCachedMessages.TryGetValue(messageCache.Id, out IMessage matureMessage))
                 {
                     IUser deleter = matureMessage.Author;
-                    IGuild deleteGuild = client.GetGuild(329174505371074560);
+                    IGuild deleteGuild = Program.Client.GetGuild(329174505371074560);
                     ITextChannel deleteInfoChannel = (ITextChannel)await deleteGuild.GetChannelAsync(335897510813892619);
                     EmbedBuilder builder = new EmbedBuilder();
                     builder.WithColor(Color.Red);
@@ -84,22 +111,18 @@ namespace CSharpDewott.Logging
                 return;
             }
 
-
-            if (bufferDeserializedMessages.Count < 25)
+            if (bufferIMessages.Count < 25)
             {
-                bufferDeserializedMessages.Add(message.Id, new DeserializedMessage(message.Id, message.IsTTS, message.IsPinned, message.Content, message.Timestamp, message.EditedTimestamp, message.CreatedAt, new DeserializableUser(message.Author.Id, message.Author.CreatedAt, message.Author.Mention, message.Author.AvatarId, message.Author.DiscriminatorValue, message.Author.Discriminator, message.Author.IsBot, message.Author.IsWebhook, message.Author.Username), new DeserializedChannel(message.Channel.Id, message.Channel.CreatedAt, message.Channel.Name, message.Channel.IsNsfw)));
+                bufferIMessages.Add(message.Id, message);
             }
 
-            if (bufferDeserializedMessages.Count < 25)
+            if (bufferIMessages.Count < 25)
             {
                 return;
             }
 
-            if (Directory.Exists(Path.Combine(Program.AppPath, "Logs", ((ITextChannel)message.Channel).Guild.Name)))
-            {
-                Program.LogMessages.AddRange(bufferDeserializedMessages, true);
-                bufferDeserializedMessages.Clear();
-            }
+            Program.LogMessages.AddRange(bufferIMessages, true);
+            bufferIMessages.Clear();
         }
 
         private static async Task HandleCommand(SocketMessage msg)
