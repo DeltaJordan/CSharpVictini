@@ -1044,7 +1044,9 @@ namespace CSharpDewott.Commands
                     return;
                 }
 
-                foreach (IMessage message in Program.LogMessages.Values.Where(e => e.Channel.Id == 341431229352247318 && e.Id != this.Context.Message.Id && e.Id != 341431527722188811))
+                List<IMessage> deleteList = Program.LogMessages.Values.Where(e => e.Channel.Id == 341431229352247318 && e.Id != this.Context.Message.Id && e.Id != 341431527722188811).ToList();
+
+                foreach (IMessage message in deleteList)
                 {
                     await message.DeleteAsync();
                 }
