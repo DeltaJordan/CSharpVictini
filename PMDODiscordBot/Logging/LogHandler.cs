@@ -130,6 +130,8 @@ namespace CSharpDewott.Logging
                     {
                         await deleteInfoChannel.SendMessageAsync(string.Empty, false, (Embed)matureMessageEmbed);
                     }
+
+                    Program.LogMessages.Remove(messageCache.Id);
                 }
             }
             catch (Exception e)
