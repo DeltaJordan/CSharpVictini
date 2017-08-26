@@ -1034,6 +1034,29 @@ namespace CSharpDewott.Commands
             await this.ReplyAsync("https://www.youtube.com/watch?v=XW5Lmq4mwQs");
         }
 
+        [Command("clearspoilers")]
+        public async Task ClearSpoilers()
+        {
+            try
+            {
+                if (this.Context.Channel.Id != 341431229352247318)
+                {
+                    return;
+                }
+
+                foreach (IMessage message in Program.LogMessages.Values.Where(e => e.Channel.Id == 341431229352247318 && e.Id != this.Context.Message.Id && e.Id != 341431527722188811))
+                {
+                    await message.DeleteAsync();
+                }
+
+                await this.Context.Message.DeleteAsync();
+            }
+            catch (Exception e)
+            {
+                Console.Out.WriteLine(e);
+            }
+        }
+
         private class MessageComparer : IComparer<IMessage>
         {
             public int Compare(IMessage x, IMessage y)
@@ -1101,29 +1124,6 @@ namespace CSharpDewott.Commands
             }
 
             await this.ReplyAsync(string.Empty, false, builder.Build());
-        }
-
-        [Command("clearspoilers")]
-        public async Task ClearSpoilers()
-        {
-            try
-            {
-                if (this.Context.Channel.Id != 341431229352247318)
-                {
-                    return;
-                }
-
-                foreach (IMessage message in Program.LogMessages.Values.Where(e => e.Channel.Id == 341431229352247318 && e.Id != this.Context.Message.Id && e.Id != 341431527722188811))
-                {
-                    await message.DeleteAsync();
-                }
-
-                await this.Context.Message.DeleteAsync();
-            }
-            catch (Exception e)
-            {
-                Console.Out.WriteLine(e);
-            }
         }
 
         [Command("set")]
