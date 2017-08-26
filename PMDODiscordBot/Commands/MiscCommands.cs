@@ -1103,6 +1103,29 @@ namespace CSharpDewott.Commands
             await this.ReplyAsync(string.Empty, false, builder.Build());
         }
 
+        [Command("clearspoilers")]
+        public async Task ClearSpoilers()
+        {
+            try
+            {
+                if (this.Context.Channel.Id != 341431229352247318)
+                {
+                    return;
+                }
+
+                foreach (IMessage message in Program.LogMessages.Values.Where(e => e.Channel.Id == 341431229352247318 && e.Id != this.Context.Message.Id && e.Id != 341431527722188811))
+                {
+                    await message.DeleteAsync();
+                }
+
+                await this.Context.Message.DeleteAsync();
+            }
+            catch (Exception e)
+            {
+                Console.Out.WriteLine(e);
+            }
+        }
+
         [Command("set")]
         public async Task SetGameInfo(string game, string info)
         {

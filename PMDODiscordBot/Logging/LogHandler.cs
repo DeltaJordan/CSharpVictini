@@ -11,12 +11,12 @@ using CSharpDewott.Extensions;
 using Discord;
 using Discord.WebSocket;
 using Newtonsoft.Json;
+using Color = System.Drawing.Color;
 
 namespace CSharpDewott.Logging
 {
     public static class LogHandler
     {
-        private static Dictionary<ulong, IMessage> bufferIMessages = new Dictionary<ulong, IMessage>();
 
         public static async Task InititializeLogs()
         {
@@ -57,9 +57,45 @@ namespace CSharpDewott.Logging
             }
         }
 
-        private static async Task Client_MessageUpdated(Cacheable<IMessage, ulong> messageCache, SocketMessage newMessage, ISocketMessageChannel originChannel)
+        private static async Task Client_MessageUpdated(Cacheable<IMessage, ulong> messageCache, SocketMessage newMessage, ISocketMessageChannel editOriginChannel)
         {
-            //TODO Implement
+            try
+            {
+                Dictionary<ulong, IMessage> allCachedMessages = Program.LogMessages;
+
+                if (Program.Client.GetGuild(329174505371074560).Channels.Any(e => e.Id == editOriginChannel.Id) && allCachedMessages.TryGetValue(messageCache.Id, out IMessage logMessage))
+                {
+                    IUser editor = logMessage.Author;
+                    IGuild editGuild = Program.Client.GetGuild(329174505371074560);
+                    ITextChannel logChannel = (ITextChannel)await editGuild.GetChannelAsync(335897510813892619);
+                    EmbedBuilder builder = new EmbedBuilder();
+                    builder.WithColor(Color.Yellow);
+                    builder.Author = new EmbedAuthorBuilder
+                    {
+                        Name = editor.Username,
+                        IconUrl = editor.GetAvatarUrl()
+                    };
+                    builder.Fields.Add(new EmbedFieldBuilder().WithName("Original message content:").WithValue(string.IsNullOrWhiteSpace(logMessage.Content) ? "empty" : logMessage.Content));
+                    builder.Fields.Add(new EmbedFieldBuilder().WithName("New message content:").WithValue(string.IsNullOrWhiteSpace(newMessage.Content) ? "empty" : newMessage.Content));
+                    builder.Fields.Add(new EmbedFieldBuilder().WithName("Time:").WithValue(newMessage.EditedTimestamp));
+
+                    if (logMessage.Embeds.Count > 0)
+                    {
+                        builder.Footer = new EmbedFooterBuilder().WithText($"Contains {logMessage.Embeds.Count} embed(s) that will be appended to the end of this message");
+                    }
+
+                    await logChannel.SendMessageAsync(string.Empty, false, builder.Build());
+
+                    foreach (IEmbed matureMessageEmbed in logMessage.Embeds)
+                    {
+                        await logChannel.SendMessageAsync(string.Empty, false, (Embed)matureMessageEmbed);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+            }
         }
 
         private static async Task Client_MessageDeleted(Cacheable<IMessage, ulong> messageCache, ISocketMessageChannel deleteOriginChannel)
@@ -104,25 +140,7 @@ namespace CSharpDewott.Logging
 
         private static async Task Client_AddLogMessage(SocketMessage msg)
         {
-            SocketUserMessage message = msg as SocketUserMessage;
-
-            if (message == null)
-            {
-                return;
-            }
-
-            if (bufferIMessages.Count < 25)
-            {
-                bufferIMessages.Add(message.Id, message);
-            }
-
-            if (bufferIMessages.Count < 25)
-            {
-                return;
-            }
-
-            Program.LogMessages.AddRange(bufferIMessages, true);
-            bufferIMessages.Clear();
+            Program.LogMessages.Add(msg.Id, msg);
         }
 
         private static async Task HandleCommand(SocketMessage msg)

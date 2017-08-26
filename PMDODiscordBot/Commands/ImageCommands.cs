@@ -258,38 +258,58 @@ namespace CSharpDewott.Commands
         [Command("get_wc")]
         public async Task GetWordCloud(IUser user = null)
         {
-            await this.Context.Channel.TriggerTypingAsync();
+            IDisposable typing = this.Context.Channel.EnterTypingState();
 
-            if (user == null)
+            try
             {
-                user = this.Context.User;
+                await this.Context.Channel.TriggerTypingAsync();
+
+                if (user == null)
+                {
+                    user = this.Context.User;
+                }
+
+                Dictionary<ulong, IMessage> allCachedMessages = Program.LogMessages;
+
+                File.WriteAllLines(Path.Combine(Program.AppPath, "wordcloudinput.txt"), allCachedMessages.Values.Where(e => e.Author.Id == user.Id).Select(e => e.Content));
+
+                ProcessStartInfo info = new ProcessStartInfo
+                {
+                    FileName = "py",
+                    Arguments = $"-3 \"{Path.Combine(Program.AppPath, "Markovs", "wc.py")}\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true
+                };
+
+                Process process = Process.Start(info);
+
+                while (process != null && (!File.Exists(Path.Combine(Program.AppPath, "wc.png")) && !process.HasExited))
+                {
+                }
+
+                if (!File.Exists(Path.Combine(Program.AppPath, "wc.png")))
+                {
+                    await this.ReplyAsync("Unable to create wordcloud.");
+                    return;
+                }
+
+                await this.Context.Channel.SendFileAsync(Path.Combine(Program.AppPath, "wc.png"));
+
+                File.Delete(Path.Combine(Program.AppPath, "wc.png"));
             }
-
-            Dictionary<ulong, IMessage> allCachedMessages = Program.LogMessages;
-
-            File.WriteAllLines(Path.Combine(Program.AppPath, "wordcloudinput.txt"), allCachedMessages.Values.Where(e => e.Author.Id == user.Id).Select(e => e.Content));
-
-            ProcessStartInfo info = new ProcessStartInfo
+            catch (Exception e)
             {
-                FileName = "py",
-                Arguments = $"-3 \"{Path.Combine(Program.AppPath, "Markovs", "wc.py")}\"",
-                UseShellExecute = false,
-                RedirectStandardOutput = true
-            };
-
-            Process markovProcess = Process.Start(info);
-
-            string output = markovProcess.StandardOutput.ReadToEnd();
-
-            Console.Out.WriteLine($"[python-output@{DateTime.Now.ToLongTimeString()}]: {output}");
-
-            while (!File.Exists(Path.Combine(Program.AppPath, "wc.png")))
-            {
+                Console.WriteLine(e);
             }
+            finally
+            {
+                if (File.Exists(Path.Combine(Program.AppPath, "wc.png")))
+                {
+                    File.Delete(Path.Combine(Program.AppPath, "wc.png"));
+                }
 
-            await this.Context.Channel.SendFileAsync(Path.Combine(Program.AppPath, "wc.png"));
-
-            File.Delete(Path.Combine(Program.AppPath, "wc.png"));
+                typing.Dispose();
+            }
         }
 
 
