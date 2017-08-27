@@ -370,7 +370,7 @@ namespace CSharpDewott.Commands
 
                 booU += " ";
 
-                for (int i = 0; i < Globals.Random.Next(7); i++)
+                for (int i = -1; i < Globals.Random.Next(7); i++)
                 {
                     booU += "u";
                 }

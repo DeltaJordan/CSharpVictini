@@ -14,6 +14,7 @@ using System.Xml;
 using CSharpDewott.Deserialization;
 using CSharpDewott.ESixOptions;
 using CSharpDewott.Extensions;
+using CSharpDewott.Preconditions;
 using Discord;
 using Discord.Commands;
 using Discord.WebSocket;
@@ -35,7 +36,26 @@ namespace CSharpDewott.Commands
 
         private static Dictionary<ulong, Stopwatch> e6Stopwatches = new Dictionary<ulong, Stopwatch>();
 
-        private static List<string> e621JsonList = new List<string>();
+        private static List<ESixImage> e621ImageList = new List<ESixImage>();
+
+        [Command("makemehappy")]
+        public async Task CheerUpTask(string filter = null)
+        {
+            if (!this.Context.Channel.IsNsfw)
+            {
+                return;
+            }
+
+            List<string> happyList = Directory.GetDirectories(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Bots", "Pokémon"), "*", SearchOption.AllDirectories).SelectMany(Directory.GetFiles).ToList();
+
+            int luckyIndex = Globals.Random.Next(0, happyList.Count - 1);
+
+
+            using (MemoryStream stream = new MemoryStream(File.ReadAllBytes(happyList[luckyIndex])))
+            {
+                await this.Context.Channel.SendFileAsync(stream, $"{new FileInfo(happyList[luckyIndex]).Directory.Name}{Path.GetExtension(happyList[luckyIndex])}");
+            }
+        }
 
         [Command("bui")]
         public async Task BuiTask()
@@ -74,23 +94,41 @@ namespace CSharpDewott.Commands
             await this.ReplyAsync(imageLink);
         }
 
-        [Command("makemehappy")]
-        public async Task CheerUpTask(string filter = null)
+        [Command("lap"), Alias("lapdance")]
+        public async Task LapTask()
         {
-            if (!this.Context.Channel.IsNsfw)
+            string clientId;
+
+            XmlDocument doc = new XmlDocument();
+            doc.Load(Path.Combine(AppPath, "config.xml"));
+            XmlNodeList xmlNodeList = doc.SelectNodes("/Settings/ImgurClientId");
+            if (xmlNodeList != null)
             {
+                try
+                {
+                    clientId = xmlNodeList[0].InnerText;
+                }
+                catch (Exception exception)
+                {
+                    Console.WriteLine("Imgur client id invalid!\n\nException: " + exception);
+                    throw;
+                }
+            }
+            else
+            {
+                await this.ReplyAsync("Invalid config file!");
                 return;
             }
 
-            List<string> happyList = Directory.GetDirectories(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Bots", "Pokémon"), "*", SearchOption.AllDirectories).SelectMany(Directory.GetFiles).ToList();
+            ImgurClient client = new ImgurClient(clientId);
+            AlbumEndpoint endpoint = new AlbumEndpoint(client);
+            IAlbum album = await endpoint.GetAlbumAsync("rlaNE");
 
-            int luckyIndex = Globals.Random.Next(0, happyList.Count - 1);
+            int randomInt = Globals.Random.Next(0, album.ImagesCount);
 
+            string imageLink = album.Images.Select(e => e.Link).ToList()[randomInt];
 
-            using (MemoryStream stream = new MemoryStream(File.ReadAllBytes(happyList[luckyIndex])))
-            {
-                await this.Context.Channel.SendFileAsync(stream, $"{new FileInfo(happyList[luckyIndex]).Directory.Name}{Path.GetExtension(happyList[luckyIndex])}");
-            }
+            await this.ReplyAsync(imageLink);
         }
 
         [Command("dewott")]
@@ -255,7 +293,7 @@ namespace CSharpDewott.Commands
             }
         }
 
-        [Command("get_wc")]
+        [Command("get_wc"), AdminPrecondition]
         public async Task GetWordCloud(IUser user = null)
         {
             IDisposable typing = this.Context.Channel.EnterTypingState();
@@ -340,16 +378,21 @@ namespace CSharpDewott.Commands
             await this.E6Task(tags);
         }
 
-        private async Task GetJson(int pageNumber, List<string> tags)
+        private static async Task GetJson(int pageNumber, IEnumerable<string> tags)
         {
-            string nextE6Json = await Program.Instance.HttpClient.GetStringAsync($"https://e621.net/post/index.json?limit=320&tags={string.Join(" ", tags)}&page={pageNumber}");
+            string nextE6Json = await Program.Instance.HttpClient.GetStringAsync(Regex.Replace($"https://e621.net/post/index.json?limit=320&tags={string.Join(" ", tags)}&page={pageNumber}", @"""created_at"":{.+},", string.Empty));
 
             if (nextE6Json == "[]")
             {
                 return;
             }
 
-            e621JsonList.Add(nextE6Json.Trim('[', ']'));
+            e621ImageList.AddRange(JsonConvert.DeserializeObject<List<ESixImage>>(nextE6Json, new JsonSerializerSettings
+            {
+                PreserveReferencesHandling = PreserveReferencesHandling.Objects,
+                ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+                TypeNameHandling = TypeNameHandling.Auto
+            }));
         }
 
         [Command("e6"), Summary("Retrieves an image from e621.net. If the channel is sfw, the command forces the \"rating:safe\" tag to be used. Also remove type tags that are requesting video files")]
@@ -357,9 +400,9 @@ namespace CSharpDewott.Commands
         {
             IDisposable typingDisposable = this.Context.Channel.EnterTypingState();
 
-            List<JObject> selectedImages = new List<JObject>();
+            List<ESixImage> selectedImages = new List<ESixImage>();
 
-            JObject currentJObject = null;
+            ESixImage currentJObject = null;
 
             Stopwatch e6Stopwatch = null;
 
@@ -444,26 +487,20 @@ namespace CSharpDewott.Commands
 
                 List<Task> taskList = new List<Task>();
 
-                for (int i = 1; i < 11; i++)
+                for (int i = 1; i < 6; i++)
                 {
-                    taskList.Add(this.GetJson(i, forcedTags));
+                    taskList.Add(GetJson(i, forcedTags));
                 }
 
                 await Task.WhenAll(taskList);
 
-                string e6Json = "[" + string.Join(",", e621JsonList) + "]";
-
-                JArray images = JArray.Parse(e6Json);
-
-                List<JToken> filteredImages = images.ToList();
-
-                filteredImages.RemoveAll(e =>
+                e621ImageList.RemoveAll(e =>
                 {
                     bool shouldDelete = false;
 
-                    if (!this.Context.Channel.IsNsfw && !(this.Context.Channel is IDMChannel) && !(this.Context.Channel is SocketDMChannel) && ((JObject) e).TryGetValue("rating", StringComparison.CurrentCultureIgnoreCase, out JToken resultJToken))
+                    if (!this.Context.Channel.IsNsfw)
                     {
-                        shouldDelete = resultJToken.ToObject<string>() != "s";
+                        shouldDelete = e.Rating != ESixImage.E621Rating.Safe;
                     }
 
                     if (shouldDelete)
@@ -471,51 +508,40 @@ namespace CSharpDewott.Commands
                         return true;
                     }
 
-                    if (((JObject) e).TryGetValue("file_ext", StringComparison.CurrentCultureIgnoreCase, out JToken resultFileType))
-                    {
-                        string extension = resultFileType.ToObject<string>();
+                    string extension = e.FileExtension;
 
-                        shouldDelete = extension != "png" && extension != "jpg" && extension != "jpeg" && extension != "gif";
-                    }
+                    shouldDelete = extension != "png" && extension != "jpg" && extension != "jpeg" && extension != "gif";
 
                     if (shouldDelete)
                     {
                         return true;
                     }
 
-                    if (((JObject) e).TryGetValue("tags", StringComparison.CurrentCultureIgnoreCase, out JToken resultTagTokens))
+                    if (e.Tags.Any(f => options.BlackList.Select(g => g.ToLower()).Contains(f.ToLower())))
                     {
-                        if (resultTagTokens.ToObject<string>().Split(' ').Any(f => options.BlackList.Select(g => g.ToLower()).Contains(f.ToLower())))
-                        {
-                            return true;
-                        }
+                        return true;
+                    }
 
-                        if (exceededTags != null)
+                    if (exceededTags != null)
+                    {
+                        foreach (string exceededTag in exceededTags)
                         {
-                            foreach (string exceededTag in exceededTags)
+                            if (!exceededTag.StartsWith("-"))
                             {
-                                if (!exceededTag.StartsWith("-"))
-                                {
-                                    continue;
-                                }
-
-                                return resultTagTokens.ToObject<string>().Split(' ').Any(f => string.Equals(f, exceededTag.TrimStart('-'), StringComparison.CurrentCultureIgnoreCase));
+                                continue;
                             }
-                        }
-                    }
 
-                    if (exceededTags != null && ((JObject) e).TryGetValue("tags", StringComparison.CurrentCultureIgnoreCase, out JToken resultTagToken))
-                    {
-                        return exceededTags.Any(exceededTag => !resultTagToken.ToObject<string>().Split(' ').Any(f => string.Equals(f, exceededTag, StringComparison.CurrentCultureIgnoreCase)));
+                            return e.Tags.Any(f => string.Equals(f, exceededTag.TrimStart('-'), StringComparison.CurrentCultureIgnoreCase));
+                        }
+
+                        return exceededTags.Any(exceededTag => !e.Tags.Any(f => string.Equals(f, exceededTag, StringComparison.CurrentCultureIgnoreCase)));
                     }
 
                     return false;
                 });
 
-                images = new JArray(filteredImages);
 
-
-                if (images.Count == 0)
+                if (e621ImageList.Count == 0)
                 {
                     await this.ReplyAsync("Couldn't find an image with those tags.");
                     return;
@@ -523,29 +549,29 @@ namespace CSharpDewott.Commands
 
                 if (getNumberOfImages)
                 {
-                    await this.ReplyAsync($"Counted {images.Count} images. Please note that this command enforces a limit of query pages, which is then filtered to remove blacklist items and unsupported filetypes.");
+                    await this.ReplyAsync($"Counted {e621ImageList.Count} images. Please note that this command enforces a limit of query pages, which is then filtered to remove blacklist items and unsupported filetypes.");
                     return;
                 }
 
-                requestedNumber = requestedNumber > images.Count ? images.Count : requestedNumber;
+                requestedNumber = requestedNumber > e621ImageList.Count ? e621ImageList.Count : requestedNumber;
 
                 for (int i = 0; i < requestedNumber; i++)
                 {
-                    int indexOfImage = Globals.Random.Next(0, images.Count);
+                    int indexOfImage = Globals.Random.Next(0, e621ImageList.Count);
 
-                    selectedImages.Add((JObject) images[indexOfImage]);
+                    selectedImages.Add(e621ImageList[indexOfImage]);
 
-                    images.RemoveAt(indexOfImage);
+                    e621ImageList.RemoveAt(indexOfImage);
                 }
 
-                foreach (JObject selectedImage in selectedImages)
+                foreach (ESixImage selectedImage in selectedImages)
                 {
 
                     currentJObject = selectedImage;
 
-                    string ext = selectedImage.GetValue("file_ext").ToObject<string>();
+                    string ext = selectedImage.FileExtension;
 
-                    string url = selectedImage.GetValue("file_url").ToObject<string>() ?? throw new Exception("Couldn't find an image with those tags.");
+                    string url = selectedImage.ImageUrl ?? throw new Exception("Couldn't find an image with those tags.");
 
 
                     //                    if (selectedImage.GetValue("file_size").ToObject<ulong>() > 8000000)
@@ -587,19 +613,7 @@ namespace CSharpDewott.Commands
 
                     if (options.DisplaySources)
                     {
-                        string[] sources;
-
-                        if (selectedImage.TryGetValue("sources", StringComparison.CurrentCultureIgnoreCase, out JToken result))
-                        {
-                            sources = result.ToObject<string[]>();
-                        }
-                        else
-                        {
-                            sources = new[]
-                            {
-                                "No sources have been given for this image."
-                            };
-                        }
+                        string[] sources = selectedImage.Sources ?? new[] {"No sources have been given for this image."};
 
                         builder.Fields.Add(new EmbedFieldBuilder
                         {
@@ -612,15 +626,13 @@ namespace CSharpDewott.Commands
                     if (options.DisplayTags)
                     {
 
-                        string allTags = selectedImage.GetValue("tags").ToObject<string>();
+                        string allTags = string.Join(", ", selectedImage.Tags);
 
                         if (allTags.Length > 2048)
                         {
                             string truncatedTags = string.Empty;
 
-                            string[] tagsList = allTags.Split(' ');
-
-                            foreach (string s in tagsList)
+                            foreach (string s in selectedImage.Tags)
                             {
                                 if (truncatedTags.Length < 2000)
                                 {
@@ -643,43 +655,40 @@ namespace CSharpDewott.Commands
                         });
                     }
 
-                    string artists = selectedImage.TryGetValue("artist", StringComparison.CurrentCultureIgnoreCase, out JToken authorToken) ? string.Join(", ", authorToken.ToObject<string[]>()) : "Unknown";
+                    string artists = selectedImage.Artists != null ? string.Join(", ", selectedImage.Artists) : "Unknown";
 
                     builder.Author = new EmbedAuthorBuilder
                     {
                         IconUrl = "http://i.imgur.com/3ngaS8h.png",
-                        Name = $"#{selectedImage.GetValue("id").ToObject<string>()}: {artists}",
-                        Url = $"https://e621.net/post/show/{selectedImage.GetValue("id").ToObject<string>()}"
+                        Name = $"#{selectedImage.Id}: {artists}",
+                        Url = $"https://e621.net/post/show/{selectedImage.Id}"
                     };
 
                     builder.ImageUrl = url;
 
-                    builder.Description = $"Score: {selectedImage.GetValue("score").ToObject<string>()}\nFavorites: {selectedImage.GetValue("fav_count").ToObject<string>()}";
+                    builder.Description = $"Score: {selectedImage.Score}\nFavorites: {selectedImage.FavoriteCount}";
 
                     System.Drawing.Color embedColor = System.Drawing.Color.Aquamarine;
 
-                    if (selectedImage.TryGetValue("rating", StringComparison.CurrentCultureIgnoreCase, out JToken resultJToken))
+                    switch (selectedImage.Rating)
                     {
-                        switch (resultJToken.ToObject<string>())
+                        case ESixImage.E621Rating.Safe:
                         {
-                            case "s":
-                            {
-                                embedColor = System.Drawing.Color.Green;
-                            }
-                                break;
-                            case "q":
-                            {
-                                embedColor = System.Drawing.Color.Yellow;
-                            }
-                                break;
-                            case "e":
-                            {
-                                embedColor = Color.Red;
-                            }
-                                break;
-                            default:
-                                break;
+                            embedColor = System.Drawing.Color.Green;
                         }
+                            break;
+                        case ESixImage.E621Rating.Questionable:
+                        {
+                            embedColor = System.Drawing.Color.Yellow;
+                        }
+                            break;
+                        case ESixImage.E621Rating.Explict:
+                        {
+                            embedColor = Color.Red;
+                        }
+                            break;
+                        default:
+                            break;
                     }
 
                     builder.WithColor(embedColor);
@@ -702,7 +711,7 @@ namespace CSharpDewott.Commands
 
                 if (getJsonId)
                 {
-                    await this.ReplyAsync("Image with id \"" + currentJObject.GetValue("id").ToObject<string>() + "\" failed to send.");
+                    await this.ReplyAsync("Image with id \"" + currentJObject.Id + "\" failed to send.");
                 }
             }
             finally

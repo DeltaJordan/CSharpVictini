@@ -56,7 +56,7 @@ namespace CSharpDewott
             AppDomain.CurrentDomain.ProcessExit += this.CurrentDomain_ProcessExit;
 
             this.HttpClient = new HttpClient();
-            this.HttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("MatrixE621");
+            this.HttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("CSharpDewott");
 
             Client = new DiscordSocketClient(new DiscordSocketConfig
             {

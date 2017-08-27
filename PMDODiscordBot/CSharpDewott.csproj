@@ -73,9 +73,12 @@
     <Compile Include="Constants.cs" />
     <Compile Include="Deserialization\Converters\AccuracyConverter.cs" />
     <Compile Include="Deserialization\Converters\BoolConverter.cs" />
+    <Compile Include="Deserialization\Converters\StringListConverter.cs" />
+    <Compile Include="Deserialization\Converters\UnixTimeConverter.cs" />
     <Compile Include="Deserialization\DeserializableUser.cs" />
     <Compile Include="Deserialization\DeserializedChannel.cs" />
     <Compile Include="Deserialization\DeserializedMessage.cs" />
+    <Compile Include="Deserialization\ESixImage.cs" />
     <Compile Include="Encryption\AESGCM.cs" />
     <Compile Include="Extensions\ConsoleHelper.cs" />
     <Compile Include="ESixOptions\UserOptions.cs" />
