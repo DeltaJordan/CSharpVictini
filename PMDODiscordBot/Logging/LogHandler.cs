@@ -90,6 +90,21 @@ namespace CSharpDewott.Logging
                     {
                         await logChannel.SendMessageAsync(string.Empty, false, (Embed)matureMessageEmbed);
                     }
+
+                    if (logMessage.Content.Contains("gay") && logMessage is IUserMessage userMessage)
+                    {
+                        if (userMessage.Reactions.TryGetValue(new Emoji("🏳️‍🌈"), out ReactionMetadata value))
+                        {
+                            if (!value.IsMe)
+                            {
+                                await userMessage.AddReactionAsync(new Emoji("🏳️‍🌈"));
+                            }
+                        }
+                        else
+                        {
+                            await userMessage.AddReactionAsync(new Emoji("🏳️‍🌈"));
+                        }
+                    }
                 }
             }
             catch (Exception e)
@@ -143,6 +158,11 @@ namespace CSharpDewott.Logging
         private static async Task Client_AddLogMessage(SocketMessage msg)
         {
             Program.LogMessages.Add(msg.Id, msg);
+
+            if (msg.Content.ToLower().Contains("gay") && msg is IUserMessage userMessage)
+            {
+                await userMessage.AddReactionAsync(new Emoji("🏳️‍🌈"));
+            }
         }
 
         private static async Task HandleCommand(SocketMessage msg)

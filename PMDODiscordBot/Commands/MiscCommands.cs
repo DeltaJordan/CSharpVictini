@@ -322,6 +322,22 @@ namespace CSharpDewott.Commands
             this.AutoPlayNextSong();
         }
 
+        [Command("ban"), AdminPrecondition]
+        public async Task Ban(ulong id, int pruneDays = 0, string reason = null)
+        {
+            await this.Context.Guild.AddBanAsync(id, pruneDays, reason);
+        }
+
+        [Command("lockup"), AdminPrecondition]
+        public async Task LockupTask(string startorstop)
+        {
+            Program.ContinueLock = startorstop == "start";
+
+            ITextChannel channel = await this.Context.Guild.GetTextChannelAsync(329320797774675971);
+
+            await channel.SendMessageAsync(";flip");
+        }
+
         /*[Command("testskip2")]
         public async Task NextSong()
         {
@@ -637,32 +653,32 @@ namespace CSharpDewott.Commands
         public async Task Help(string text = "")
         {
 
-            Image image = null;
-
-            if (HttpHelper.UrlExists("https://play.pokemonshowdown.com/sprites/xyani/dewott.gif"))
-            {
-                byte[] imageBytes = await Program.Instance.HttpClient.GetByteArrayAsync("https://play.pokemonshowdown.com/sprites/xyani/dewott.gif");
-
-                using (MemoryStream ms = new MemoryStream(imageBytes))
-                {
-                    image = Image.FromStream(ms);
-                }
-            }
-
-            if (image != null)
-            {
-                if (File.Exists(Path.Combine(this.AppPath, "pokemon.gif")))
-                {
-                    File.Delete(Path.Combine(this.AppPath, "pokemon.gif"));
-                }
-
-                image.Save(Path.Combine(this.AppPath, "pokemon.gif"));
-
-                await (await this.Context.User.GetOrCreateDMChannelAsync()).SendFileAsync(Path.Combine(this.AppPath, "pokemon.gif"));
-            }
-
             if (text == string.Empty)
             {
+                Image image = null;
+
+                if (HttpHelper.UrlExists("https://play.pokemonshowdown.com/sprites/xyani/dewott.gif"))
+                {
+                    byte[] imageBytes = await Program.Instance.HttpClient.GetByteArrayAsync("https://play.pokemonshowdown.com/sprites/xyani/dewott.gif");
+
+                    using (MemoryStream ms = new MemoryStream(imageBytes))
+                    {
+                        image = Image.FromStream(ms);
+                    }
+                }
+
+                if (image != null)
+                {
+                    if (File.Exists(Path.Combine(this.AppPath, "pokemon.gif")))
+                    {
+                        File.Delete(Path.Combine(this.AppPath, "pokemon.gif"));
+                    }
+
+                    image.Save(Path.Combine(this.AppPath, "pokemon.gif"));
+
+                    await (await this.Context.User.GetOrCreateDMChannelAsync()).SendFileAsync(Path.Combine(this.AppPath, "pokemon.gif"));
+                }
+
                 EmbedBuilder builder = new EmbedBuilder();
                 builder.WithColor(Color.FromArgb(163, 214, 227));
                 builder.Title = "List of commands:";
@@ -940,7 +956,7 @@ namespace CSharpDewott.Commands
         [Command("stats"), Summary("Gets random info about the server."), Alias("stat", "serverinfo")]
         public async Task Stats()
         {
-            Dictionary<ulong, IMessage> allCachedMessages = Program.LogMessages;
+            Dictionary<ulong, IMessage> allCachedMessages = Program.LogMessages.ToDictionary(e => e.Key, e => e.Value);
 
             EmbedBuilder builder = new EmbedBuilder
             {
@@ -990,7 +1006,7 @@ namespace CSharpDewott.Commands
             {
                 IsInline = false,
                 Name = "User with the most messages",
-                Value = (await this.Context.Guild.GetUserAsync(userMessageCountDictionary.Aggregate((l, r) => l.Value > r.Value ? l : r).Key)).Username
+                Value = (await this.Context.Guild.GetUserAsync(userMessageCountDictionary.Aggregate((l, r) => l.Value > r.Value ? l : r).Key)).GetUsernameOrNickname()
             });
 
             Dictionary<ulong, int> channelMessageCountDictionary = (await this.Context.Guild.GetTextChannelsAsync()).ToDictionary(channel => channel.Id, channel => allCachedMessages.Values.Count(e => e.Channel.Id == channel.Id));
@@ -1002,28 +1018,38 @@ namespace CSharpDewott.Commands
                 Value = (await this.Context.Guild.GetTextChannelAsync(channelMessageCountDictionary.Aggregate((l, r) => l.Value > r.Value ? l : r).Key)).Name
             });
 
-            /*string mostCommon5 = allCachedMessages
-                .SelectMany(e => 
-                    Regex.Matches(e.Content, @"[A-Za-z-']+")
-                        .OfType<Match>()
-                        .Select(match => CultureInfo.InvariantCulture.TextInfo.ToTitleCase(match.Value))
-                        .GroupBy(word => word)
-                        .Select(chunk => new
-                        {
-                            word = chunk.Key,
-                            count = chunk.Count()
-                        })
-                        .OrderByDescending(item => item.count)
-                        .ThenBy(item => item.word)
-                        .Take(5).Select(f => f.word))
-                .Aggregate((a, b) => a + ", " + b);
+            Dictionary<ulong, int> userGayDictionary = (await this.Context.Guild.GetUsersAsync()).ToDictionary(guildUser => guildUser.Id, guildUser => allCachedMessages.Values.Count(e => guildUser.Id == e.Author.Id && e.Content.ToLower().Contains("gay")));
+            Console.WriteLine(userGayDictionary.Values.Aggregate((e, f) => e + f));
 
             builder.Fields.Add(new EmbedFieldBuilder
             {
-                IsInline = true,
-                Name = "Top 5 words",
-                Value = mostCommon5
-            });*/
+                IsInline = false,
+                Name = "Gayest user",
+                Value = (await this.Context.Guild.GetUserAsync(userGayDictionary.Aggregate((l, r) => l.Value > r.Value ? l : r).Key)).GetUsernameOrNickname()
+            });
+
+            /*string mostCommon5 = allCachedMessages
+            .SelectMany(e => 
+                Regex.Matches(e.Content, @"[A-Za-z-']+")
+                    .OfType<Match>()
+                    .Select(match => CultureInfo.InvariantCulture.TextInfo.ToTitleCase(match.Value))
+                    .GroupBy(word => word)
+                    .Select(chunk => new
+                    {
+                        word = chunk.Key,
+                        count = chunk.Count()
+                    })
+                    .OrderByDescending(item => item.count)
+                    .ThenBy(item => item.word)
+                    .Take(5).Select(f => f.word))
+            .Aggregate((a, b) => a + ", " + b);
+
+        builder.Fields.Add(new EmbedFieldBuilder
+        {
+            IsInline = true,
+            Name = "Top 5 words",
+            Value = mostCommon5
+        });*/
 
             await this.ReplyAsync(string.Empty, false, builder.Build());
         }

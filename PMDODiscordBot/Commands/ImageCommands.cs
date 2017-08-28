@@ -717,6 +717,7 @@ namespace CSharpDewott.Commands
             finally
             {
                 typingDisposable.Dispose();
+                e621ImageList.Clear();
             }
         }
     }

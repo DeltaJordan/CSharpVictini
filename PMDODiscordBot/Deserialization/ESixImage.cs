@@ -47,15 +47,15 @@ namespace CSharpDewott.Deserialization
         [JsonProperty("preview_url")]
         public string IconUrl { get; set; }
         [JsonProperty("preview_width")]
-        public int IconWidth { get; set; }
+        public int? IconWidth { get; set; }
         [JsonProperty("preview_height")]
-        public int IconHeight { get; set; }
+        public int? IconHeight { get; set; }
         [JsonProperty("file_url")]
         public string ImageUrl { get; set; }
         [JsonProperty("width")]
-        public int ImageWidth { get; set; }
+        public int? ImageWidth { get; set; }
         [JsonProperty("height")]
-        public int ImageHeight { get; set; }
+        public int? ImageHeight { get; set; }
         [JsonProperty("file_size")]
         public ulong FileSize { get; set; }
         [JsonProperty("file_ext")]

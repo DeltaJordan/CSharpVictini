@@ -44,6 +44,7 @@ namespace CSharpDewott
         public HttpClient HttpClient;
         public static Dictionary<ulong, IMessage> LogMessages;
         public static DiscordSocketClient Client;
+        public static bool ContinueLock = true;
 
 
         // private IAudioClient vClient;
@@ -128,6 +129,30 @@ namespace CSharpDewott
             }
         }
 
+        private static async Task AddReactions()
+        {
+            foreach (IMessage message in LogMessages.Values)
+            {
+                if (!message.Content.Contains("gay") || !(message is IUserMessage userMessage))
+                {
+                    continue;
+                }
+
+                if (userMessage.Reactions.TryGetValue(new Emoji("🏳️‍🌈"), out ReactionMetadata value))
+                {
+                    if (!value.IsMe)
+                    {
+                        await userMessage.AddReactionAsync(new Emoji("🏳️‍🌈"));
+                    }
+                }
+                else
+                {
+                    await userMessage.AddReactionAsync(new Emoji("🏳️‍🌈"));
+                }
+            }
+
+        }
+
         public static async Task Client_Ready()
         {
             try
@@ -163,6 +188,8 @@ namespace CSharpDewott
 #else
                 await Client.SetGameAsync("this feels gay");
 #endif
+
+                await Task.Run(AddReactions);
             }
         }
 

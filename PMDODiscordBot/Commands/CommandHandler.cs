@@ -339,6 +339,11 @@ namespace CSharpDewott.Commands
                 }
             }
 
+            if (Globals.Random.Next(65536) < 16)
+            {
+                await message.AddReactionAsync(Emote.Parse("351627395159031809"));
+            }
+
             if (message.Content.ToLower().Contains("hello") && message.Content.ToLower().Contains("csharpdewott"))
             {
                 await message.Channel.SendMessageAsync($"Hello {message.Author.Username}!");
@@ -347,16 +352,19 @@ namespace CSharpDewott.Commands
             if (message.Content.Contains("(╯°□°）╯︵ ┻━┻"))
             {
                 await message.Channel.SendMessageAsync("┬─┬﻿ ノ( ゜-゜ノ)");
+                return;
             }
 
             if (message.Content.Contains("┬─┬﻿ ノ( ゜-゜ノ)"))
             {
                 await message.Channel.SendMessageAsync("https://youtu.be/To6nhootM3w");
+                return;
             }
 
             if (message.Content.ToLower().Contains("no u") && Globals.Random.NextDouble() < 0.3)
             {
                 await message.Channel.SendMessageAsync("no u");
+                return;
             }
 
             if (message.Content.ToLower().Contains("boo") && message.Content.ToLower().Contains("u") && message.Content.Contains(Program.Client.CurrentUser.Mention))
@@ -376,6 +384,12 @@ namespace CSharpDewott.Commands
                 }
 
                 await message.Channel.SendMessageAsync($"no {booU} {message.Author.Mention}");
+                return;
+            }
+
+            if (message.Content.ToLower().Contains("fuck") && (message.Content.ToLower().Contains("you") || message.Content.ToLower().Contains(" u")) && message.MentionedUsers.Any(e => e.Id == Program.Client.CurrentUser.Id))
+            {
+                await message.Channel.SendMessageAsync("~~Please do~~");
             }
         }
     }
