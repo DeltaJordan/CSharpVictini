@@ -344,7 +344,7 @@ namespace CSharpDewott.Commands
                 await message.AddReactionAsync(Emote.Parse("351627395159031809"));
             }
 
-            if (message.Content.ToLower().Contains("hello") && message.Content.ToLower().Contains("csharpdewott"))
+            if (message.Content.ToLower().Contains("hello") && message.MentionedUsers.Any(e => e.Id == Program.Client.CurrentUser.Id))
             {
                 await message.Channel.SendMessageAsync($"Hello {message.Author.Username}!");
             }
@@ -367,7 +367,7 @@ namespace CSharpDewott.Commands
                 return;
             }
 
-            if (message.Content.ToLower().Contains("boo") && message.Content.ToLower().Contains("u") && message.Content.Contains(Program.Client.CurrentUser.Mention))
+            if (message.Content.ToLower().Contains("boo") && message.Content.ToLower().Contains("u") && message.MentionedUsers.Any(e => e.Id == Program.Client.CurrentUser.Id))
             {
                 string booU = "boo";
 
