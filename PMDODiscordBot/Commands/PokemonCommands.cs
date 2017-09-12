@@ -316,7 +316,7 @@ namespace CSharpDewott.Commands
             }
         }
 
-        [Command("pkinfo"), Summary("Retrieves the requested Pokémon's data from a customly built library"), Alias("poke", "pokeinfo")]
+        [Command("pkinfo"), Summary("Retrieves the requested Pokémon's data from a custom built library"), Alias("poke", "pokeinfo")]
         public async Task PokemonInfo(
             [Summary("Pokémon's name to search. Must be in quotes if there are spaces.")]
             params string[] pokeNameStrings)

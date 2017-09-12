@@ -14,23 +14,24 @@ namespace CSharpDewott.Extensions
         {
             bool result = false;
 
-            WebRequest webRequest = WebRequest.Create(url);
-            webRequest.Timeout = 1200; // miliseconds
-            webRequest.Method = "HEAD";
-
-            HttpWebResponse response = null;
-
             try
             {
-                response = (HttpWebResponse)webRequest.GetResponse();
-                result = true;
+                if (!Uri.IsWellFormedUriString(url, UriKind.RelativeOrAbsolute))
+                {
+                    return false;
+                }
+
+                WebRequest webRequest = WebRequest.Create(url);
+                webRequest.Timeout = 1200; // miliseconds
+                webRequest.Method = "HEAD";
+
+                using (HttpWebResponse response = (HttpWebResponse)webRequest.GetResponse())
+                {
+                    result = true;
+                }
             }
-            catch (WebException)
+            catch
             {
-            }
-            finally
-            {
-                response?.Close();
             }
 
             return result;

@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using CSharpDewott.Extensions;
 using CSharpDewott.Preconditions;
 using Discord;
 using Discord.Commands;
@@ -26,6 +26,16 @@ namespace CSharpDewott.Commands
             {
                 Console.WriteLine(e);
             }
+        }
+
+        [Command("users"), AdminPrecondition]
+        public async Task Users()
+        {
+            IGuild dewottGuild = await Context.Client.GetGuildAsync(329174505371074560);
+
+            List<string> userList = (from guildUser in await dewottGuild.GetUsersAsync() select guildUser.Username).ToList();
+
+            await this.ReplyAsync(string.Join(", ", userList));
         }
 
         [Command("eval"), AdminPrecondition]
@@ -98,6 +108,29 @@ namespace CSharpDewott.Commands
             catch (Exception e)
             {
                 Console.WriteLine(e);
+            }
+        }
+
+        [Command("perms"), AdminPrecondition]
+        public async Task Perms(IGuildUser user)
+        {
+            if (user != null)
+            {
+                EmbedBuilder builder = new EmbedBuilder();
+                builder.Fields.Add(new EmbedFieldBuilder
+                {
+                    IsInline = false,
+                    Name = "Permissions",
+                    Value = user.GuildPermissions.ToList().Aggregate(string.Empty, (current, userGuildPermission) => current + ", " + Enum.GetName(typeof(GuildPermission), userGuildPermission))
+                });
+
+                builder.Author = new EmbedAuthorBuilder
+                {
+                    IconUrl = user.GetAvatarUrl(),
+                    Name = user.GetUsernameOrNickname()
+                };
+
+                await this.ReplyAsync(string.Empty, false, builder.Build());
             }
         }
 
@@ -195,9 +228,9 @@ namespace CSharpDewott.Commands
         }
 
         [Command("setgame"), AdminPrecondition, Summary("Sets the \"Playing\" text")]
-        public async Task SetGameText(string gametext)
+        public async Task SetGameText(string gameText)
         {
-            await Program.Client.SetGameAsync(gametext);
+            await Program.Client.SetGameAsync(gameText);
         }
     }
 }

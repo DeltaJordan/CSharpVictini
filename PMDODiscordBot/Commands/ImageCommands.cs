@@ -7,13 +7,14 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
 using CSharpDewott.Deserialization;
 using CSharpDewott.ESixOptions;
 using CSharpDewott.Extensions;
+using CSharpDewott.Logging;
 using CSharpDewott.Preconditions;
 using Discord;
 using Discord.Commands;
@@ -23,9 +24,10 @@ using Imgur.API.Endpoints.Impl;
 using Imgur.API.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using RedditSharp;
+using RedditSharp.Things;
 using Color = System.Drawing.Color;
 using Image = System.Drawing.Image;
-using ImageFormat = Discord.ImageFormat;
 using IMessage = Discord.IMessage;
 
 namespace CSharpDewott.Commands
@@ -57,33 +59,16 @@ namespace CSharpDewott.Commands
             }
         }
 
+        [Command("jonbaned")]
+        public async Task JonBaned()
+        {
+            await this.ReplyAsync("https://i.imgur.com/BcJbZXL.gif");
+        }
+
         [Command("bui")]
         public async Task BuiTask()
         {
-            string clientId;
-
-            XmlDocument doc = new XmlDocument();
-            doc.Load(Path.Combine(AppPath, "config.xml"));
-            XmlNodeList xmlNodeList = doc.SelectNodes("/Settings/ImgurClientId");
-            if (xmlNodeList != null)
-            {
-                try
-                {
-                    clientId = xmlNodeList[0].InnerText;
-                }
-                catch (Exception exception)
-                {
-                    Console.WriteLine("Imgur client id invalid!\n\nException: " + exception);
-                    throw;
-                }
-            }
-            else
-            {
-                await this.ReplyAsync("Invalid config file!");
-                return;
-            }
-
-            ImgurClient client = new ImgurClient(clientId);
+            ImgurClient client = new ImgurClient(Globals.Settings.ImgurClientId);
             AlbumEndpoint endpoint = new AlbumEndpoint(client);
             IAlbum album = await endpoint.GetAlbumAsync("KJTbv");
 
@@ -94,33 +79,99 @@ namespace CSharpDewott.Commands
             await this.ReplyAsync(imageLink);
         }
 
+        [Command("hmmm")]
+        public async Task HmmmTask()
+        {
+            using (this.Context.Channel.EnterTypingState())
+            {
+                BotWebAgent webAgent = new BotWebAgent(Globals.Settings.RedditUsername, Globals.Settings.RedditPass, Globals.Settings.RedditClientID, Globals.Settings.RedditSecret, "https://github.com/JordanZeotni/CSharpDewott");
+                Reddit reddit = new Reddit(webAgent, false);
+                Subreddit subreddit = reddit.GetSubreddit("/r/Hmmm/");
+
+                List<Post> posts = subreddit.GetTop((FromTime)Globals.Random.Next(0, 5)).Take(500).Where(e => !e.NSFW).ToList();
+
+                Post selectedPost = posts[Globals.Random.Next(0, posts.Count)];
+
+                Regex linkParser = new Regex(@"\b(?:https?://|www\.)\S+\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+                string imageLink = selectedPost.Url.ToString();
+                if (imageLink.ToLower().Contains("imgur"))
+                {
+                    ImgurClient client = new ImgurClient(Globals.Settings.ImgurClientId);
+                    ImageEndpoint endpoint = new ImageEndpoint(client);
+                    imageLink = (await endpoint.GetImageAsync(Regex.Replace(Regex.Replace(imageLink, @".+imgur\.com/", string.Empty), @"\..+", string.Empty))).Link;
+                }
+
+                EmbedBuilder builder = new EmbedBuilder
+                {
+                    Author = new EmbedAuthorBuilder
+                    {
+                        Name = selectedPost.Title,
+                        Url = selectedPost.Shortlink
+                    },
+                    ImageUrl = imageLink,
+                    Footer = new EmbedFooterBuilder
+                    {
+                        Text = $"Author: {selectedPost.Author.Name}",
+                        IconUrl = "https://media.glassdoor.com/sqll/796358/reddit-squarelogo-1490630845152.png"
+                    }
+                };
+
+                builder.WithColor(Color.OrangeRed);
+                
+                await this.ReplyAsync(string.Empty, false, builder.Build());
+            }
+        }
+
+        [Command("bossfight")]
+        public async Task BossFight()
+        {
+            using (this.Context.Channel.EnterTypingState())
+            {
+                IUserMessage introMessage = await this.ReplyAsync("Wild boss appears! *cue boss music*");
+
+                BotWebAgent webAgent = new BotWebAgent(Globals.Settings.RedditUsername, Globals.Settings.RedditPass, Globals.Settings.RedditClientID, Globals.Settings.RedditSecret, "https://github.com/JordanZeotni/CSharpDewott");
+                Reddit reddit = new Reddit(webAgent, false);
+                Subreddit subreddit = reddit.GetSubreddit("/r/Bossfight/");
+
+                Post selectedPost = subreddit.GetTop(FromTime.All).Where(e => !e.NSFW).ToList()[Globals.Random.Next(0, subreddit.Posts.Count(e => !e.NSFW))];
+
+                Regex linkParser = new Regex(@"\b(?:https?://|www\.)\S+\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+                string imageLink = selectedPost.Url.ToString();
+                if (imageLink.ToLower().Contains("imgur"))
+                {
+                    ImgurClient client = new ImgurClient(Globals.Settings.ImgurClientId);
+                    ImageEndpoint endpoint = new ImageEndpoint(client);
+                    imageLink = (await endpoint.GetImageAsync(Regex.Replace(Regex.Replace(imageLink, @".+imgur\.com/", string.Empty), @"\..+", string.Empty))).Link;
+                }
+
+                EmbedBuilder builder = new EmbedBuilder
+                {
+                    Author = new EmbedAuthorBuilder
+                    {
+                        Name = selectedPost.Title,
+                        Url = selectedPost.Shortlink
+                    },
+                    ImageUrl = imageLink,
+                    Footer = new EmbedFooterBuilder
+                    {
+                        Text = $"Author: {selectedPost.Author.Name}",
+                        IconUrl = "https://media.glassdoor.com/sqll/796358/reddit-squarelogo-1490630845152.png"
+                    }
+                };
+
+                builder.WithColor(Color.OrangeRed);
+
+                await introMessage.DeleteAsync();
+                await this.ReplyAsync(string.Empty, false, builder.Build());
+            }
+        }
+
         [Command("lap"), Alias("lapdance")]
         public async Task LapTask()
         {
-            string clientId;
-
-            XmlDocument doc = new XmlDocument();
-            doc.Load(Path.Combine(AppPath, "config.xml"));
-            XmlNodeList xmlNodeList = doc.SelectNodes("/Settings/ImgurClientId");
-            if (xmlNodeList != null)
-            {
-                try
-                {
-                    clientId = xmlNodeList[0].InnerText;
-                }
-                catch (Exception exception)
-                {
-                    Console.WriteLine("Imgur client id invalid!\n\nException: " + exception);
-                    throw;
-                }
-            }
-            else
-            {
-                await this.ReplyAsync("Invalid config file!");
-                return;
-            }
-
-            ImgurClient client = new ImgurClient(clientId);
+            ImgurClient client = new ImgurClient(Globals.Settings.ImgurClientId);
             AlbumEndpoint endpoint = new AlbumEndpoint(client);
             IAlbum album = await endpoint.GetAlbumAsync("rlaNE");
 
@@ -134,30 +185,7 @@ namespace CSharpDewott.Commands
         [Command("dewott")]
         public async Task DewottTask()
         {
-            string clientId;
-
-            XmlDocument doc = new XmlDocument();
-            doc.Load(Path.Combine(AppPath, "config.xml"));
-            XmlNodeList xmlNodeList = doc.SelectNodes("/Settings/ImgurClientId");
-            if (xmlNodeList != null)
-            {
-                try
-                {
-                    clientId = xmlNodeList[0].InnerText;
-                }
-                catch (Exception exception)
-                {
-                    Console.WriteLine("Imgur client id invalid!\n\nException: " + exception);
-                    throw;
-                }
-            }
-            else
-            {
-                await this.ReplyAsync("Invalid config file!");
-                return;
-            }
-
-            ImgurClient client = new ImgurClient(clientId);
+            ImgurClient client = new ImgurClient(Globals.Settings.ImgurClientId);
             AlbumEndpoint endpoint = new AlbumEndpoint(client);
             IAlbum album = await endpoint.GetAlbumAsync("qc266");
 
@@ -168,6 +196,21 @@ namespace CSharpDewott.Commands
             await this.ReplyAsync(imageLink);
         }
 
+        [Command("jonvideo")]
+        public async Task JonVideo(params string[] query)
+        {
+            List<(string Title, string Url)> selectedVideos = LogHandler.JonVideoList.Where(e => query.Length == 0 || e.Title.Split(' ').Any(f => query.Any(g => string.Equals(f, g, StringComparison.CurrentCultureIgnoreCase)))).ToList();
+
+            if (selectedVideos.Any())
+            {
+                await this.ReplyAsync(selectedVideos[Globals.Random.Next(0, selectedVideos.Count - 1)].Url);
+            }
+            else
+            {
+                await this.ReplyAsync("No videos match your search.");
+            }
+        }
+
         [Command("randomize")]
         public async Task RandomImage(params string[] imageLink)
         {
@@ -175,13 +218,29 @@ namespace CSharpDewott.Commands
 
             try
             {
-
                 string imageUrl = imageLink.Length == 0 ? this.Context.User.GetAvatarUrl() : string.Join(" ", imageLink);
 
                 if (!HttpHelper.UrlExists(imageUrl))
                 {
-                    await this.ReplyAsync("Invalid image!");
-                    return;
+                    if ((await this.Context.Guild.GetUsersAsync()).Any(e => string.Equals(e.Username, imageUrl.Split('#')[0], StringComparison.CurrentCultureIgnoreCase) || string.Equals(e.Nickname, imageUrl.Split('#')[0], StringComparison.CurrentCultureIgnoreCase)))
+                    {
+                        imageUrl = (await this.Context.Guild.GetUsersAsync()).First(e => string.Equals(e.Username, imageUrl, StringComparison.CurrentCultureIgnoreCase) || string.Equals(e.Nickname, imageUrl.Split('#')[0], StringComparison.CurrentCultureIgnoreCase)).GetAvatarUrl();
+                    }
+                    else if (this.Context.Message.MentionedUserIds.Count > 0)
+                    {
+                        if (this.Context.Message.MentionedUserIds.Count > 1)
+                        {
+                            await this.ReplyAsync("Invalid image!");
+                            return;
+                        }
+
+                        imageUrl = (await this.Context.Channel.GetUserAsync(this.Context.Message.MentionedUserIds.First())).GetAvatarUrl();
+                    }
+                    else
+                    {
+                        await this.ReplyAsync("Invalid image!");
+                        return;
+                    }
                 }
 
                 System.Drawing.Image image;
@@ -327,7 +386,7 @@ namespace CSharpDewott.Commands
 
                 if (!File.Exists(Path.Combine(Program.AppPath, "wc.png")))
                 {
-                    await this.ReplyAsync("Unable to create wordcloud.");
+                    await this.ReplyAsync("Unable to create word cloud.");
                     return;
                 }
 
@@ -350,6 +409,44 @@ namespace CSharpDewott.Commands
             }
         }
 
+        /// <summary>
+        /// Splits an IEnumerable&lt;string&gt; to a enumerable list of enumerable lists that can be then used to bypass char limits
+        /// </summary>
+        /// <param name="listToSplit">IEnumerable&lt;string&gt; that will be split</param>
+        /// <param name="charLimit">Limit of characters base split on</param>
+        /// <param name="joiningCharCount">Optional joining char count to apply to char counting</param>
+        /// <returns></returns>
+        private IEnumerable<IEnumerable<string>> SplitToLists(IEnumerable<string> listToSplit, int charLimit, int joiningCharCount = 0)
+        {
+            List<List<string>> splitLists = new List<List<string>>();
+
+            string joiningCharDummy = string.Empty;
+
+            for (int i = 0; i < joiningCharCount; i++)
+            {
+                joiningCharDummy += "$";
+            }
+
+            IEnumerable<string> toSplit = listToSplit as string[] ?? listToSplit.ToArray();
+            if (string.Join(joiningCharDummy, toSplit.Take(toSplit.Count() / 2)).Length < charLimit)
+            {
+                splitLists.Add(toSplit.Take(toSplit.Count() / 2).ToList());
+                splitLists.Add(toSplit.Skip(toSplit.Count() / 2).ToList());
+                return splitLists;
+            }
+
+            if (string.Join(joiningCharDummy, toSplit.Skip(toSplit.Count() / 2)).Length < charLimit)
+            {
+                splitLists.AddRange(this.SplitToLists(toSplit.Take(toSplit.Count() / 2), charLimit, joiningCharCount).Select(e => e.ToList()).ToList());
+                splitLists.Add(toSplit.Skip(toSplit.Count() / 2).ToList());
+
+                return splitLists;
+            }
+
+            splitLists.AddRange(this.SplitToLists(toSplit.Take(toSplit.Count() / 2), charLimit, joiningCharCount).Select(e => e.ToList()).ToList());
+            splitLists.AddRange(this.SplitToLists(toSplit.Skip(toSplit.Count() / 2), charLimit, joiningCharCount).Select(e => e.ToList()).ToList());
+            return splitLists;
+        }
 
         public async Task E6FileSizeChecker(JArray images, params string[] tags)
         {
@@ -380,7 +477,7 @@ namespace CSharpDewott.Commands
 
         private static async Task GetJson(int pageNumber, IEnumerable<string> tags)
         {
-            string nextE6Json = await Program.Instance.HttpClient.GetStringAsync(Regex.Replace($"https://e621.net/post/index.json?limit=320&tags={string.Join(" ", tags)}&page={pageNumber}", @"""created_at"":{.+},", string.Empty));
+            string nextE6Json = await Program.Instance.HttpClient.GetStringAsync($"https://e621.net/post/index.json?limit=320&tags={string.Join(" ", tags)}&page={pageNumber}");
 
             if (nextE6Json == "[]")
             {
@@ -627,24 +724,16 @@ namespace CSharpDewott.Commands
                     {
 
                         string allTags = string.Join(", ", selectedImage.Tags);
+                        List<string> excessTags  = new List<string>();
+                        int neededFields = 0;
 
-                        if (allTags.Length > 2048)
+                        if (allTags.Length > 1024)
                         {
-                            string truncatedTags = string.Empty;
+                            excessTags.AddRange(this.SplitToLists(selectedImage.Tags, 1024, 2).Select(enumerable => String.Join(", ", enumerable)));
 
-                            foreach (string s in selectedImage.Tags)
-                            {
-                                if (truncatedTags.Length < 2000)
-                                {
-                                    truncatedTags += s + ", ";
-                                    continue;
-                                }
-
-                                truncatedTags += s;
-                                break;
-                            }
-
-                            allTags = truncatedTags;
+                            allTags = excessTags.First();
+                            
+                            excessTags.RemoveAt(0);
                         }
 
                         builder.Fields.Add(new EmbedFieldBuilder
@@ -653,6 +742,16 @@ namespace CSharpDewott.Commands
                             Name = "Tags",
                             Value = allTags
                         });
+
+                        foreach (string t in excessTags)
+                        {
+                            builder.Fields.Add(new EmbedFieldBuilder
+                            {
+                                IsInline = true,
+                                Name = "Tags (cont.)",
+                                Value = t
+                            });
+                        }
                     }
 
                     string artists = selectedImage.Artists != null ? string.Join(", ", selectedImage.Artists) : "Unknown";
@@ -719,6 +818,155 @@ namespace CSharpDewott.Commands
                 typingDisposable.Dispose();
                 e621ImageList.Clear();
             }
+        }
+    }
+
+    [Group("e6_option")]
+    public class E6Options : ModuleBase
+    {
+        [Command("set")]
+        public async Task E6SetOption(params string[] argStrings)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(Program.AppPath, "e6options"));
+
+                UserOptions options = new UserOptions
+                {
+                    Id = this.Context.User.Id,
+                    BlackList = new List<string>
+                    {
+                        "scat",
+                        "gore"
+                    },
+                    DisplaySources = false,
+                    DisplayTags = false,
+                    DisplayId = false
+                };
+
+                if (File.Exists(Path.Combine(Program.AppPath, "e6options", $"{this.Context.User.Id}.json")))
+                {
+                    options = JsonConvert.DeserializeObject<UserOptions>(File.ReadAllText(Path.Combine(Program.AppPath, "e6options", $"{this.Context.User.Id}.json")));
+                }
+
+                if (argStrings.Length < 2)
+                {
+                    await this.ReplyAsync("The command setup is `.e6_option set [tags|sources|Id] [true|false]`.\nBy default all options are false.");
+                    return;
+                }
+
+                switch (argStrings[0].ToLower())
+                {
+                    case "tags":
+                    case "tag":
+                    {
+                        if (bool.TryParse(argStrings[1], out bool result))
+                        {
+                            options.DisplayTags = result;
+                        }
+                        else
+                        {
+                            await this.ReplyAsync("Option \"Tags\" requires either true or false as the value");
+                            return;
+                        }
+                    }
+
+                        break;
+                    case "source":
+                    case "sources":
+                    {
+                        if (bool.TryParse(argStrings[1], out bool result))
+                        {
+                            options.DisplaySources = result;
+                        }
+                        else
+                        {
+                            await this.ReplyAsync("Option \"Sources\" requires either true or false as the value");
+                            return;
+                        }
+                    }
+                        break;
+
+                    default:
+                    {
+                        await this.ReplyAsync("The command setup is `.e6 set [tags|sources|Id] [true|false]` or for blacklists `.e6 set [blacklist add|exclude|blacklist remove|include] [tag].\nBy default all options are false and blacklist contains \"scat\" and \"gore\".");
+                        return;
+                    }
+                }
+
+                File.WriteAllText(Path.Combine(Program.AppPath, "e6options", $"{this.Context.User.Id}.json"), JsonConvert.SerializeObject(options));
+
+                await this.ReplyAsync("Option set successfully!");
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+            }
+        }
+
+        [Command("blacklist")]
+        public async Task Blacklist(params string[] argStrings)
+        {
+            Directory.CreateDirectory(Path.Combine(Program.AppPath, "e6options"));
+
+            UserOptions options = new UserOptions
+            {
+                Id = this.Context.User.Id,
+                BlackList = new List<string>
+                {
+                    "scat",
+                    "gore"
+                },
+                DisplaySources = false,
+                DisplayTags = false,
+                DisplayId = false
+            };
+
+            if (File.Exists(Path.Combine(Program.AppPath, "e6options", $"{this.Context.User.Id}.json")))
+            {
+                options = JsonConvert.DeserializeObject<UserOptions>(File.ReadAllText(Path.Combine(Program.AppPath, "e6options", $"{this.Context.User.Id}.json")));
+            }
+
+            if (argStrings.Length < 1)
+            {
+                await this.ReplyAsync("The command setup is `.e6_option blacklist [remove|add] [tag(s)]`");
+                return;
+            }
+
+            if (argStrings[0].ToLower() == "get")
+            {
+                await this.ReplyAsync($"Your personal blacklist of tags is {string.Join(", ", options.BlackList)}");
+                return;
+            }
+
+            if (argStrings.Length < 2)
+            {
+                await this.ReplyAsync("The command setup is `.e6_option blacklist [remove|add] [tag(s)]`");
+                return;
+            }
+
+            switch (argStrings[0].ToLower())
+            {
+                case "remove":
+                {
+                    options.BlackList = options.BlackList.Where(e => !argStrings.Skip(1).Select(f => f.ToLower()).Contains(e.ToLower())).ToList();
+                    await this.ReplyAsync($"Option set successfully! Your personal blacklist of tags is now {string.Join(", ", options.BlackList)}");
+                }
+                    break;
+                case "add":
+                {
+                    options.BlackList.AddRange(argStrings.Skip(1));
+                    await this.ReplyAsync($"Option set successfully! Your personal blacklist of tags is now {string.Join(", ", options.BlackList)}");
+                }
+                    break;
+                default:
+                {
+                    await this.ReplyAsync("The command setup is `.e6_option blacklist [remove|add] [tag(s)]`");
+                    return;
+                }
+            }
+
+            File.WriteAllText(Path.Combine(Program.AppPath, "e6options", $"{this.Context.User.Id}.json"), JsonConvert.SerializeObject(options));
         }
     }
 }

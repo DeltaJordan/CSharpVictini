@@ -33,7 +33,7 @@ namespace CSharpDewott.Deserialization
 //      [JsonProperty("created_at"), JsonConverter(typeof(UnixTimeConverter))]
 //      public DateTime CreatedAt { get; set; }
         [JsonProperty("creator_id")]
-        public ulong CreatorId { get; set; }
+        public ulong? CreatorId { get; set; }
         [JsonProperty("author")]
         public string Author { get; set; }
         [JsonProperty("source")]

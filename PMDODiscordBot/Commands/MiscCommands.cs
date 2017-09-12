@@ -1,45 +1,32 @@
-﻿// <copyright file="Commands.cs" company="JordantheBuizel">
-// Copyright (c) JordantheBuizel. All rights reserved.
-// </copyright>
-
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.Drawing.Imaging;
-using System.Globalization;
-using System.IO;
-using System.Linq;
-using System.Net;
-using System.Reflection;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using System.Xml;
-using CSharpDewott.Deserialization;
-using CSharpDewott.ESixOptions;
-using CSharpDewott.Extensions;
-using CSharpDewott.GameInfo;
-using CSharpDewott.IO;
-using CSharpDewott.Music;
-using CSharpDewott.Preconditions;
-using Discord;
-using Discord.Audio;
-using Discord.Commands;
-using Discord.WebSocket;
-using Imgur.API.Authentication.Impl;
-using Imgur.API.Endpoints.Impl;
-using Imgur.API.Models;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using Color = System.Drawing.Color;
-using Image = System.Drawing.Image;
-using ImageFormat = System.Drawing.Imaging.ImageFormat;
-using IMessage = Discord.IMessage;
-using ParameterInfo = Discord.Commands.ParameterInfo;
-
-namespace CSharpDewott.Commands
+﻿namespace CSharpDewott.Commands
 {
+    using System;
+    using System.Collections.Generic;
+    using System.Diagnostics;
+    using System.Drawing;
+    using System.Globalization;
+    using System.IO;
+    using System.Linq;
+    using System.Net;
+    using System.Threading.Tasks;
+    using System.Xml;
+
+    using CSharpDewott.Commands.Modules;
+    using CSharpDewott.Extensions;
+    using CSharpDewott.GameInfo;
+    using CSharpDewott.IO;
+    using CSharpDewott.Music;
+    using CSharpDewott.Preconditions;
+
+    using Discord;
+    using Discord.Audio;
+    using Discord.Commands;
+    using Newtonsoft.Json;
+    using Color = System.Drawing.Color;
+    using Image = System.Drawing.Image;
+    using IMessage = Discord.IMessage;
+    using ParameterInfo = Discord.Commands.ParameterInfo;
+
     public class MiscCommands : ModuleBase
     {
         private IAudioClient currentAudioClient;
@@ -57,6 +44,8 @@ namespace CSharpDewott.Commands
             "tank engine",
             "pmu"
         };
+
+        public static Dictionary<ulong, NumberGame> NumberGameInstances = new Dictionary<ulong, NumberGame>();
 
         private Process CreateStream(string songPath)
         {
@@ -436,7 +425,7 @@ namespace CSharpDewott.Commands
             [Summary("Optionally choose the level. 1 = Easy, 2 = Medium, 3 = Hard, 4 = Extreme")]
             int level = 1)
         {
-            if (Program.IsNumberGameRunning)
+            if (NumberGameInstances.ContainsKey(this.Context.Channel.Id))
             {
                 await this.Context.Channel.SendMessageAsync("Please wait until the current game is finished.");
                 return;
@@ -444,89 +433,11 @@ namespace CSharpDewott.Commands
 
             if (!this.Context.Channel.Name.Contains("bot"))
             {
-                await this.ReplyAsync("Please use the bot channel for number game");
+                await this.ReplyAsync("Please use a bot channel for number game");
                 return;
             }
 
-            Program.CurrentLevel = level;
-
-            try
-            {
-
-                switch (level)
-                {
-                    case 1:
-                    {
-                        await this.Context.Channel.SendMessageAsync("Starting number game with easy difficulty...");
-                        IDisposable typeDisposable = this.Context.Channel.EnterTypingState();
-                        Program.CorrectNumber = Program.Random.Next(1, 100);
-                        Program.IsNumberGameRunning = true;
-                        Program.PlayingUser = this.Context.User;
-                        typeDisposable.Dispose();
-                        await this.Context.Channel.SendMessageAsync(
-                            "Begin guessing! The number is between 1 and 100");
-                    }
-
-                        break;
-                    case 2:
-                    {
-                        await this.Context.Channel.SendMessageAsync("Starting number game with medium difficulty...");
-                        IDisposable typeDisposable = this.Context.Channel.EnterTypingState();
-                        Program.CorrectNumber = Program.Random.Next(1, 1000);
-                        Program.IsNumberGameRunning = true;
-                        Program.PlayingUser = this.Context.User;
-                        typeDisposable.Dispose();
-                            await this.Context.Channel.SendMessageAsync(
-                            "Begin guessing! The number is between 1 and 1000");
-                    }
-
-                        break;
-                    case 3:
-                    {
-                        await this.Context.Channel.SendMessageAsync("Starting number game with hard difficulty...");
-                        IDisposable typeDisposable = this.Context.Channel.EnterTypingState();
-                        Program.CorrectNumber = Program.Random.Next(1, 10000);
-                        Program.IsNumberGameRunning = true;
-                        Program.PlayingUser = this.Context.User;
-                        typeDisposable.Dispose();
-                            await this.Context.Channel.SendMessageAsync(
-                            "Begin guessing! The number is between 1 and 10000");
-                    }
-
-                        break;
-                    case 4:
-                    {
-                        await this.Context.Channel.SendMessageAsync("Starting number game with extreme difficulty...");
-                        IDisposable typeDisposable = this.Context.Channel.EnterTypingState();
-                        Program.CorrectNumber = Program.Random.Next(1, 100000);
-                        Program.IsNumberGameRunning = true;
-                        Program.PlayingUser = this.Context.User;
-                        typeDisposable.Dispose();
-                            await this.Context.Channel.SendMessageAsync(
-                            "Begin guessing! The number is between 1 and 100000");
-                    }
-
-                        break;
-                    default:
-                    {
-                        Program.CurrentLevel = 1;
-                        await this.Context.Channel.SendMessageAsync("Starting number game with easy difficulty...");
-                        IDisposable typeDisposable = this.Context.Channel.EnterTypingState();
-                        Program.CorrectNumber = Program.Random.Next(1, 100);
-                        Program.IsNumberGameRunning = true;
-                        Program.PlayingUser = this.Context.User;
-                        typeDisposable.Dispose();
-                            await this.Context.Channel.SendMessageAsync(
-                            "Begin guessing! The number is between 1 and 100");
-                    }
-
-                        break;
-                }
-            }
-            catch (Exception ex)
-            {
-                ConsoleHelper.WriteLine(ex);
-            }
+            NumberGameInstances.Add(this.Context.Channel.Id, new NumberGame(this.Context.User, level, this.Context));
         }
 
         /*[Command("me")]
@@ -558,7 +469,7 @@ namespace CSharpDewott.Commands
         }*/
 
         [Command("getfrisky")]
-        public async Task SetAdeventurer()
+        public async Task SetAdventurer()
         {
             IGuild mainGuild = await this.Context.Client.GetGuildAsync(329174505371074560);
 
@@ -591,7 +502,7 @@ namespace CSharpDewott.Commands
         }
 
         [Command("getunfrisky")]
-        public async Task RemoveAdeventurer()
+        public async Task RemoveAdventurer()
         {
             IGuild mainGuild = await this.Context.Client.GetGuildAsync(329174505371074560);
 
@@ -964,13 +875,13 @@ namespace CSharpDewott.Commands
                 ThumbnailUrl = this.Context.Guild.IconUrl
             };
 
-            List<int> messegesInAWeek = new List<int>();
+            List<int> messagesInAWeek = new List<int>();
 
             for (int i = 1; i < 7; i++)
             {
                 if (DateTime.Now.Day - i > 0)
                 {
-                    messegesInAWeek.Add(allCachedMessages.Values.Count(e => e.Timestamp.Day == DateTime.Now.Day - i && e.Timestamp.Month == DateTime.Now.Month));
+                    messagesInAWeek.Add(allCachedMessages.Values.Count(e => e.Timestamp.Day == DateTime.Now.Day - i && e.Timestamp.Month == DateTime.Now.Month));
                 }
                 else
                 {
@@ -980,16 +891,16 @@ namespace CSharpDewott.Commands
 
                     int day = DateTime.DaysInMonth(DateTime.Now.Year, month) - overflow;
 
-                    messegesInAWeek.Add(allCachedMessages.Values.Count(e => e.Timestamp.Day == day && e.Timestamp.Month == month));
+                    messagesInAWeek.Add(allCachedMessages.Values.Count(e => e.Timestamp.Day == day && e.Timestamp.Month == month));
                 }
             }
 
-            int averageMessages = messegesInAWeek.Sum() / messegesInAWeek.Count;
+            int averageMessages = messagesInAWeek.Sum() / messagesInAWeek.Count;
 
             builder.Fields.Add(new EmbedFieldBuilder
             {
                 IsInline = false,
-                Name = "Average messeges per day in the last week",
+                Name = "Average messages per day in the last week",
                 Value = averageMessages
             });
 
@@ -1018,7 +929,7 @@ namespace CSharpDewott.Commands
                 Value = (await this.Context.Guild.GetTextChannelAsync(channelMessageCountDictionary.Aggregate((l, r) => l.Value > r.Value ? l : r).Key)).Name
             });
 
-            Dictionary<ulong, int> userGayDictionary = (await this.Context.Guild.GetUsersAsync()).ToDictionary(guildUser => guildUser.Id, guildUser => allCachedMessages.Values.Count(e => guildUser.Id == e.Author.Id && e.Content.ToLower().Contains("gay")));
+            Dictionary<ulong, int> userGayDictionary = (await this.Context.Guild.GetUsersAsync()).ToDictionary(guildUser => guildUser.Id, guildUser => allCachedMessages.Values.Count(e => guildUser.Id == e.Author.Id && e.Content.ToLower().Contains("gay") && !e.Author.IsBot));
             Console.WriteLine(userGayDictionary.Values.Aggregate((e, f) => e + f));
 
             builder.Fields.Add(new EmbedFieldBuilder

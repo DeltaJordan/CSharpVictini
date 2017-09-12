@@ -1,29 +1,42 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Reflection;
-using System.Threading.Tasks;
-using CSharpDewott.ESixOptions;
-using CSharpDewott.Extensions;
-using CSharpDewott.GameInfo;
-using CSharpDewott.IO;
-using CSharpDewott.Logging;
-using CSharpDewott.Preconditions;
-using Discord;
-using Discord.Commands;
-using Discord.WebSocket;
-using Newtonsoft.Json;
-using Color = System.Drawing.Color;
-using Image = System.Drawing.Image;
-
-namespace CSharpDewott.Commands
+﻿namespace CSharpDewott.Commands
 {
+    using System;
+    using System.Collections.Generic;
+    using System.IO;
+    using System.Linq;
+    using System.Reflection;
+    using System.Threading.Tasks;
+
+    using Modules;
+    using ESixOptions;
+    using Extensions;
+    using Logging;
+    using Preconditions;
+
+    using Discord;
+    using Discord.Commands;
+    using Discord.WebSocket;
+
+    using Newtonsoft.Json;
+
+    using Image = System.Drawing.Image;
+
+    /// <summary>
+    /// The command handler.
+    /// </summary>
     public static class CommandHandler
     {
-        private static int currentGuesses;
+        /// <summary>
+        /// The command service.
+        /// </summary>
         private static CommandService commands;
 
+        /// <summary>
+        /// Initializes the command handler.
+        /// </summary>
+        /// <returns>
+        /// The <see cref="Task"/>.
+        /// </returns>
         public static async Task InitializeCommandHandler()
         {
             commands = new CommandService(new CommandServiceConfig
@@ -39,6 +52,15 @@ namespace CSharpDewott.Commands
             await commands.AddModulesAsync(Assembly.GetEntryAssembly());
         }
 
+        /// <summary>
+        /// The pre-command handler.
+        /// </summary>
+        /// <param name="msg">
+        /// The current message that triggered the handler.
+        /// </param>
+        /// <returns>
+        /// The <see cref="Task"/>.
+        /// </returns>
         public static async Task PreCommand(SocketMessage msg)
         {
             SocketUserMessage message = msg as SocketUserMessage;
@@ -48,8 +70,10 @@ namespace CSharpDewott.Commands
                 return;
             }
 
-            // Add string testing after the argPos
-            int argPos = 0;
+            if (Globals.Random.Next(65536) < 16)
+            {
+                await message.AddReactionAsync(Emote.Parse("351627395159031809"));
+            }
 
             if (message.Content.StartsWith("*") & message.Content.EndsWith("*") || message.Content.StartsWith("_") & message.Content.EndsWith("_"))
             {
@@ -80,138 +104,19 @@ namespace CSharpDewott.Commands
                 }
             }
 
-            if (message.Content.StartsWith(".e6 set"))
-            {
-                try
-                {
-                    Directory.CreateDirectory(Path.Combine(Program.AppPath, "e6options"));
-
-                    UserOptions options = new UserOptions
-                    {
-                        Id = message.Author.Id,
-                        BlackList = new List<string>
-                        {
-                            "scat",
-                            "gore"
-                        },
-                        DisplaySources = false,
-                        DisplayTags = false,
-                        DisplayId = false
-                    };
-
-                    if (File.Exists(Path.Combine(Program.AppPath, "e6options", $"{message.Author.Id}.json")))
-                    {
-                        options = JsonConvert.DeserializeObject<UserOptions>(File.ReadAllText(Path.Combine(Program.AppPath, "e6options", $"{message.Author.Id}.json")));
-                    }
-
-                    if (message.Content.Split(' ').Length < 4)
-                    {
-                        await message.Channel.SendMessageAsync("The command setup is `.e6 set [tags|sources|Id] [true|false]` or for blacklists `.e6 set [blacklist add|exclude|blacklist remove|include] [tag]`.\nBy default all options are false and blacklist contains \"scat\" and \"gore\".");
-                        return;
-                    }
-
-                    switch (message.Content.ToLower().Split(' ')[2])
-                    {
-                        case "tags":
-                        case "tag":
-                        {
-                            if (bool.TryParse(message.Content.Split(' ')[3], out bool result))
-                            {
-                                options.DisplayTags = result;
-                            }
-                            else
-                            {
-                                await message.Channel.SendMessageAsync("Option \"Tags\" requires either true or false as the value");
-                                return;
-                            }
-                        }
-                            break;
-                        case "source":
-                        case "sources":
-                        {
-                            if (bool.TryParse(message.Content.Split(' ')[3], out bool result))
-                            {
-                                options.DisplaySources = result;
-                            }
-                            else
-                            {
-                                await message.Channel.SendMessageAsync("Option \"Sources\" requires either true or false as the value");
-                                return;
-                            }
-                        }
-                            break;
-                        case "exclude":
-                        {
-                            options.BlackList.Add(message.Content.Split(' ')[3]);
-
-                            await message.Channel.SendMessageAsync($"Option set succussfully! Your blacklisted tags are now {string.Join(", ", options.BlackList)}.");
-                            File.WriteAllText(Path.Combine(Program.AppPath, "e6options", $"{message.Author.Id}.json"), JsonConvert.SerializeObject(options));
-                            return;
-                        }
-                        case "include":
-                        {
-                            options.BlackList.RemoveAll(e => string.Equals(e, message.Content.Split(' ')[3], StringComparison.CurrentCultureIgnoreCase));
-
-                            await message.Channel.SendMessageAsync($"Option set succussfully! Your blacklisted tags are now {string.Join(", ", options.BlackList)}.");
-                            File.WriteAllText(Path.Combine(Program.AppPath, "e6options", $"{message.Author.Id}.json"), JsonConvert.SerializeObject(options));
-                            return;
-                        }
-                        case "blacklist":
-                        {
-                            string[] commandArgs = message.Content.ToLower().Split(' ');
-                            if (commandArgs.Length < 5)
-                            {
-                                await message.Channel.SendMessageAsync("The command setup is `.e6 set [tags|sources|Id] [true|false]` or for blacklists `.e6 set [blacklist add|exclude|blacklist remove|include] [tag].\nBy default all options are false and blacklist contains \"scat\" and \"gore\".");
-                                return;
-                            }
-
-                            switch (commandArgs[3])
-                            {
-                                case "set":
-                                {
-                                    options.BlackList.Add(commandArgs[4]);
-
-                                    await message.Channel.SendMessageAsync($"Option set succussfully! Your blacklisted tags are now {string.Join(", ", options.BlackList)}.");
-                                    File.WriteAllText(Path.Combine(Program.AppPath, "e6options", $"{message.Author.Id}.json"), JsonConvert.SerializeObject(options));
-                                    return;
-                                }
-                                case "remove":
-                                {
-                                    options.BlackList.RemoveAll(e => string.Equals(e, commandArgs[4], StringComparison.CurrentCultureIgnoreCase));
-
-                                    await message.Channel.SendMessageAsync($"Option set succussfully! Your blacklisted tags are now {string.Join(", ", options.BlackList)}.");
-                                    File.WriteAllText(Path.Combine(Program.AppPath, "e6options", $"{message.Author.Id}.json"), JsonConvert.SerializeObject(options));
-                                    return;
-                                }
-                                default:
-                                {
-                                    await message.Channel.SendMessageAsync("The command setup is `.e6 set [tags|sources|Id] [true|false]` or for blacklists `.e6 set [blacklist add|exclude|blacklist remove|include] [tag].\nBy default all options are false and blacklist contains \"scat\" and \"gore\".");
-                                    return;
-                                }
-                            }
-                        }
-                        default:
-                        {
-                            await message.Channel.SendMessageAsync("The command setup is `.e6 set [tags|sources|Id] [true|false]` or for blacklists `.e6 set [blacklist add|exclude|blacklist remove|include] [tag].\nBy default all options are false and blacklist contains \"scat\" and \"gore\".");
-                            return;
-                        }
-                    }
-
-                    File.WriteAllText(Path.Combine(Program.AppPath, "e6options", $"{message.Author.Id}.json"), JsonConvert.SerializeObject(options));
-
-                    await message.Channel.SendMessageAsync("Option set succussfully!");
-
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine(e);
-                }
-            }
-
             await HandleCommand(message);
         }
 
-        public static async Task HandleCommand(SocketUserMessage message)
+        /// <summary>
+        /// Handles commands.
+        /// </summary>
+        /// <param name="message">
+        /// The message.
+        /// </param>
+        /// <returns>
+        /// The <see cref="Task"/>.
+        /// </returns>
+        private static async Task HandleCommand(SocketUserMessage message)
         {
             int argPos = 0;
 
@@ -222,9 +127,8 @@ namespace CSharpDewott.Commands
 
                 string commandName = message.Content.Substring(1).Split(' ')[0].Trim();
 
-                if (!AdminPrecondition.Whitelist.Contains(message.Author.Id) && !message.Author.IsBot)
+                if (!AdminPrecondition.Whitelist.Contains(message.Author.Id) && !message.Author.IsBot && Globals.CommandService.Commands.Any(e => string.Equals(e.Name, message.Content.Substring(1).Split(' ')[0], StringComparison.CurrentCultureIgnoreCase) || e.Aliases.Any(f => string.Equals(f, message.Content.Substring(1).Split(' ')[0], StringComparison.CurrentCultureIgnoreCase))))
                 {
-
                     if (File.Exists(Path.Combine(Program.AppPath, "blacklists", $"{commandName}.txt")))
                     {
                         if (File.ReadAllLines(Path.Combine(Program.AppPath, "blacklists", $"{commandName}.txt")).Any(e => e.Contains(message.Channel.Id.ToString())))
@@ -242,7 +146,7 @@ namespace CSharpDewott.Commands
                 }
 
                 // Execute the command. (result does not indicate a return value,
-                // rather an object stating if the command executed succesfully)
+                // rather an object stating if the command executed successfully)
                 IResult result = await commands.ExecuteAsync(context, argPos);
                 if (!result.IsSuccess)
                 {
@@ -260,7 +164,16 @@ namespace CSharpDewott.Commands
             await PostCommand(message);
         }
 
-        public static async Task PostCommand(SocketUserMessage message)
+        /// <summary>
+        /// Handles the message if it is not a command.
+        /// </summary>
+        /// <param name="message">
+        /// The message.
+        /// </param>
+        /// <returns>
+        /// The <see cref="Task"/>.
+        /// </returns>
+        private static async Task PostCommand(SocketUserMessage message)
         {
             int luckyNumber = Globals.Random.Next(0, 1000);
 
@@ -269,79 +182,19 @@ namespace CSharpDewott.Commands
                 await message.Channel.SendMessageAsync("This feels gay");
             }
 
-            if (Program.IsNumberGameRunning && message.Author.Id == Program.PlayingUser.Id &&
-                message.Channel.Name.ToLower().Contains("bot"))
+            if (MiscCommands.NumberGameInstances.TryGetValue(message.Channel.Id, out NumberGame game) && message.Author.Id == game.PlayerUser.Id)
             {
                 if (int.TryParse(message.Content, out int guess))
                 {
-                    if (guess > Program.CorrectNumber)
+                    await game.GuessNumber(guess);
+
+                    if (game.IsGameOver)
                     {
-                        currentGuesses++;
-                        await message.Channel.SendMessageAsync($"Too high! You have guessed {currentGuesses} times.");
+                        MiscCommands.NumberGameInstances.Remove(message.Channel.Id);
                     }
 
-                    if (guess < Program.CorrectNumber)
-                    {
-                        currentGuesses++;
-                        await message.Channel.SendMessageAsync($"Too low! You have guessed {currentGuesses} times.");
-                    }
-
-                    if (guess == Program.CorrectNumber)
-                    {
-                        currentGuesses++;
-                        await message.Channel.SendMessageAsync(
-                            $"Congrats! You have guessed {currentGuesses} times to get the correct number, {Program.CorrectNumber}.");
-
-                        if (!File.Exists(Path.Combine(Program.AppPath, "numbergame", $"record{Program.CurrentLevel}.json")))
-                        {
-                            FileHelper.CreateIfDoesNotExist(Program.AppPath, "numbergame", $"record{Program.CurrentLevel}.json");
-
-                            NGRecords records = new NGRecords
-                            {
-                                Difficulty = Program.CurrentLevel,
-                                Guesses = currentGuesses,
-                                Id = message.Author.Id
-                            };
-
-                            string json = JsonConvert.SerializeObject(records);
-
-                            File.WriteAllText(Path.Combine(Program.AppPath, "numbergame", $"record{Program.CurrentLevel}.json"), json);
-                        }
-                        else
-                        {
-                            NGRecords records = new NGRecords
-                            {
-                                Difficulty = Program.CurrentLevel,
-                                Guesses = currentGuesses,
-                                Id = message.Author.Id
-                            };
-
-                            NGRecords oldRecords = JsonConvert.DeserializeObject<NGRecords>(File.ReadAllText(Path.Combine(Program.AppPath, "numbergame", $"record{Program.CurrentLevel}.json")));
-
-                            if (oldRecords.Guesses > currentGuesses)
-                            {
-                                string json = JsonConvert.SerializeObject(records);
-
-                                File.WriteAllText(Path.Combine(Program.AppPath, "numbergame", $"record{Program.CurrentLevel}.json"), json);
-                            }
-                        }
-
-                        NGRecords newestRecords = JsonConvert.DeserializeObject<NGRecords>(File.ReadAllText(Path.Combine(Program.AppPath, "numbergame", $"record{Program.CurrentLevel}.json")));
-
-                        await message.Channel.SendMessageAsync($"The current record is {newestRecords.Guesses}, set by {((ITextChannel)message.Channel).Guild.GetUserAsync(newestRecords.Id).Result.Username}");
-
-                        Program.CurrentLevel = 0;
-                        Program.CorrectNumber = 0;
-                        currentGuesses = 0;
-                        Program.IsNumberGameRunning = false;
-                        Program.PlayingUser = null;
-                    }
+                    return;
                 }
-            }
-
-            if (Globals.Random.Next(65536) < 16)
-            {
-                await message.AddReactionAsync(Emote.Parse("351627395159031809"));
             }
 
             if (message.Content.ToLower().Contains("hello") && message.MentionedUsers.Any(e => e.Id == Program.Client.CurrentUser.Id))

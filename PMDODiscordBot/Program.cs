@@ -2,30 +2,20 @@
 // Copyright (c) JordantheBuizel. All rights reserved.
 // </copyright>
 extern alias http;
-
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Reflection;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Xml;
 using CSharpDewott.Commands;
 using CSharpDewott.Deserialization;
 using CSharpDewott.Encryption;
-using CSharpDewott.ESixOptions;
-using CSharpDewott.Extensions;
-using CSharpDewott.GameInfo;
-using CSharpDewott.IO;
 using CSharpDewott.Logging;
-using CSharpDewott.Preconditions;
 using Discord;
-using Discord.Commands;
 using Discord.WebSocket;
 using http::System.Net.Http;
 using Newtonsoft.Json;
-using Image = System.Drawing.Image;
 
 namespace CSharpDewott
 {
@@ -36,10 +26,6 @@ namespace CSharpDewott
     {
         public static readonly Random Random = new Random();
         public static readonly string AppPath = Directory.GetParent(new Uri(Assembly.GetEntryAssembly().CodeBase).LocalPath).FullName;
-        public static bool IsNumberGameRunning = false;
-        public static IUser PlayingUser;
-        public static int CorrectNumber = -1;
-        public static int CurrentLevel;
         public static Program Instance;
         public HttpClient HttpClient;
         public static Dictionary<ulong, IMessage> LogMessages;
@@ -68,30 +54,11 @@ namespace CSharpDewott
 
             Client.Ready += Client_Ready;
 
+            Globals.Settings = JsonConvert.DeserializeObject<Settings>(File.ReadAllText(Path.Combine(AppPath, "config.json")));
+
             await LogHandler.InititializeLogs();
 
-            XmlDocument doc = new XmlDocument();
-            doc.Load(Path.Combine(AppPath, "config.xml"));
-            XmlNodeList xmlNodeList = doc.SelectNodes("/Settings/Token");
-            if (xmlNodeList != null)
-            {
-                string token = xmlNodeList[0].InnerText;
-
-                try
-                {
-                    await Client.LoginAsync(TokenType.Bot, token);
-                }
-                catch (Exception exception)
-                {
-                    Console.WriteLine("Token invalid!\n\nException: " + exception);
-                    throw;
-                }
-            }
-            else
-            {
-                Console.WriteLine("Invalid config file!");
-                Environment.Exit(404);
-            }
+            await Client.LoginAsync(TokenType.Bot, Globals.Settings.Token);
 
             await Client.StartAsync();
 
